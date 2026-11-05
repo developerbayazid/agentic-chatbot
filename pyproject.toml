@@ -7,7 +7,12 @@ authors = [
     { name = "developerbayazid", email = "bayazid.freelancer@gmail.com" }
 ]
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "langchain>=1.4.9",
+    "langchain-openai>=1.7.4",
+    "langgraph>=1.2.19",
+    "python-dotenv>=1.2.4",
+]
 
 [project.scripts]
 agentic-chatbot = "agentic_chatbot:main"

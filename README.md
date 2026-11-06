@@ -1,32 +1,34 @@
 # Agentic Chatbot
 
-A hands-on project to learn and build an **Agentic AI Chatbot** using Python, LangChain, and LangGraph.
+A hands-on project focused on learning and building an **Agentic AI Chatbot** using Python, LangChain, and LangGraph.
 
-This repository follows a practical learning series and focuses on implementing the chatbot's functionalities step by step, from basic conversational capabilities to more advanced agentic features.
+This repository follows a practical, project-based learning approach, implementing chatbot capabilities step by step — from basic LLM interactions and conversation management to advanced agentic workflows.
 
-The goal is to understand how an AI chatbot works internally and how different components come together to create an intelligent, interactive AI agent.
+The primary goal is to understand how AI agents work internally, how their components interact, and how to build intelligent systems capable of reasoning, making decisions, and executing tasks.
 
 ## 🎯 Project Goals
 
 - Build an AI-powered conversational chatbot.
 - Understand the fundamentals of Agentic AI.
-- Explore LangChain and LangGraph in a practical project.
-- Implement different chatbot functionalities step by step.
+- Explore LangChain and LangGraph through practical implementation.
+- Implement chatbot functionalities incrementally.
 - Understand state management and conversation flow.
 - Explore tool calling and external tool integration.
-- Learn how an AI agent makes decisions and executes tasks.
-- Gradually develop a more capable and intelligent chatbot.
+- Learn how AI agents make decisions and execute tasks.
+- Experiment with memory, persistence, and agentic workflows.
 
 ## 🛠️ Tech Stack
 
-- **Python** — Primary programming language
-- **LangChain** — LLM application framework
-- **LangGraph** — Agent and workflow orchestration
-- **OpenAI** — Language models
-- **Pydantic** — Structured output and data validation
-- **python-dotenv** — Environment variable management
-- **Streamlit** — Chatbot interface (if used)
-- **Git & GitHub** — Version control
+| Technology        | Purpose                                |
+| ----------------- | -------------------------------------- |
+| **Python**        | Primary programming language           |
+| **LangChain**     | LLM application development            |
+| **LangGraph**     | Agent and workflow orchestration       |
+| **OpenAI**        | Large language models                  |
+| **Pydantic**      | Structured output and data validation  |
+| **python-dotenv** | Environment variable management        |
+| **Streamlit**     | Optional chatbot interface             |
+| **Git & GitHub**  | Version control and project management |
 
 ## 📂 Repository Structure
 
@@ -38,11 +40,9 @@ agentic-chatbot/
 ├── requirements.txt
 ├── .env.example
 │
-├── app.py
-│
 ├── chatbot/
 │   ├── __init__.py
-│   ├── ...
+│   └── ...
 │
 ├── tools/
 │   └── ...
@@ -50,26 +50,28 @@ agentic-chatbot/
 └── ...
 ```
 
-_The repository structure will evolve as new functionalities are implemented._
+_The repository structure will evolve as new concepts and functionalities are implemented._
 
 ## 📚 Learning Progress
 
-This project is being developed incrementally by following the video series.
+This project is being developed incrementally through hands-on implementation.
 
-### Implemented Features
+### Implementation Checklist
 
-- [ ] Initial chatbot setup
-- [ ] Basic LLM integration
-- [ ] Conversational interface
-- [ ] Chat history management
-- [ ] State management
-- [ ] LangGraph integration
-- [ ] Tool calling
+- [x] Initial project setup
+- [x] Basic LLM integration
+- [x] Chatbot implementation
+- [x] Conversation history management
+- [x] State management
+- [x] LangGraph integration
+- [x] Checkpointing and persistence
+- [ ] Tool calling and integration
 - [ ] Agentic decision-making
-- [ ] Memory and persistence
-- [ ] Additional chatbot functionalities
+- [ ] Memory management
+- [ ] Advanced agentic workflows
+- [ ] Additional functionalities
 
-_The checklist will be updated as each feature is implemented._
+_This checklist will be updated as new features are implemented._
 
 ## ⚙️ Installation & Setup
 
@@ -87,7 +89,7 @@ cd agentic-chatbot
 python -m venv .venv
 ```
 
-Activate on Windows:
+Activate the environment on Windows:
 
 ```powershell
 .venv\Scripts\activate
@@ -101,45 +103,48 @@ pip install -r requirements.txt
 
 ### 4. Configure environment variables
 
-Create a `.env` file in the project root:
+Create a `.env` file in the project root and add your OpenAI API key:
 
 ```env
 OPENAI_API_KEY=your_openai_api_key
 ```
 
-Never commit your `.env` file or expose your API key.
+**Important:** Never commit your `.env` file or expose your API key. Use `.env.example` to document the required environment variables.
 
 ## ▶️ Running the Project
 
-The execution command will depend on the chatbot interface and project structure.
+The execution command depends on the current implementation and project structure.
 
-For example, if the project uses Streamlit:
+For a Python-based chatbot, you may run:
+
+```bash
+python agentic_chatbot.py
+```
+
+If a Streamlit interface is implemented later, it can be launched using:
 
 ```bash
 streamlit run app.py
 ```
 
-## 📖 Learning Resource
-
-**YouTube Learning Series:**
-
-[Agentic Chatbot — Complete Learning Playlist](https://www.youtube.com/playlist?list=PLkz_y24mlSJZ9SFlc9O4Q4Grli5SQDbrB)
-
-[Current Video — Agentic Chatbot](https://www.youtube.com/watch?v=_BVsXOC46wQ)
-
 ## 💡 Learning Approach
 
-I am following a practical, project-based learning approach:
+I follow a practical, project-based learning process:
 
-1. Watch and understand each lesson.
+1. Study each concept and understand its purpose.
 2. Implement the functionality using Python.
-3. Understand how each component works internally.
-4. Test the chatbot with different inputs.
-5. Document the implementation.
-6. Gradually improve the chatbot with new capabilities.
+3. Explore how the underlying components work.
+4. Test implementations with different inputs.
+5. Document important concepts and observations.
+6. Refactor and improve the implementation.
+7. Gradually introduce more advanced agentic capabilities.
 
-The objective is not just to build a chatbot, but to understand the engineering concepts behind Agentic AI systems.
+The objective is not simply to build a chatbot, but to understand the engineering principles behind modern Agentic AI systems.
+
+## 🚀 Project Status
+
+\<text>Ongoing — new concepts and functionalities are added as the learning journey progresses.\</text>
 
 ---
 
-**This project is continuously evolving as I learn and implement new Agentic AI concepts.**
+**This project is a continuous learning journey toward understanding and building practical Agentic AI systems.**

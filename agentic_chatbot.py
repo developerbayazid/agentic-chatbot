@@ -106,17 +106,16 @@ system_message = SystemMessage(
     content="You are a helpful assistant."
 )
 
-# First invocation only
-chatbot.invoke(
-    {
-        "messages": [system_message]
-    },
-    config=config
+# Check whether this thread already has messages
+existing_state = chatbot.get_state(config)
+
+first_message = not bool(
+    existing_state.values.get("messages")
 )
 
 
 # ==========================================
-# Interactive Chat Loop
+# Interactive Streaming Chat Loop
 # ==========================================
 
 print("\nChatbot started!")
@@ -135,18 +134,41 @@ while True:
 
     try:
 
-        response = chatbot.invoke(
+        # Prepare new messages
+        new_messages = [
+            HumanMessage(content=user_message)
+        ]
+
+        # Add system message only for a new conversation
+        if first_message:
+            new_messages.insert(0, system_message)
+            first_message = False
+
+        print("\nAI: ", end="", flush=True)
+
+        # Stream LLM response
+        for chunk in chatbot.stream(
             {
-                "messages": [
-                    HumanMessage(content=user_message)
-                ]
+                "messages": new_messages
             },
-            config=config
-        )
+            config=config,
+            stream_mode="messages",
+            version="v2"
+        ):
 
-        ai_response = response["messages"][-1].content
+            message_chunk = chunk["data"][0]
+            metadata = chunk["data"][1]
 
-        print("\nAI:", ai_response, "\n")
+            # Print only text content
+            if message_chunk.content:
+                if isinstance(message_chunk.content, str):
+                    print(
+                        message_chunk.content,
+                        end="",
+                        flush=True
+                    )
+
+        print("\n")
 
     except Exception as error:
 

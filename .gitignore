@@ -69,3 +69,6 @@ langgraph.json.tmp
 *.tmp
 *.bak
 .cache/
+
+
+chatbot_memory.db

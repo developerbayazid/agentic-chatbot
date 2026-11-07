@@ -19,16 +19,17 @@ The primary goal is to understand how AI agents work internally, how their compo
 
 ## 🛠️ Tech Stack
 
-| Technology        | Purpose                                |
-| ----------------- | -------------------------------------- |
-| **Python**        | Primary programming language           |
-| **LangChain**     | LLM application development            |
-| **LangGraph**     | Agent and workflow orchestration       |
-| **OpenAI**        | Large language models                  |
-| **Pydantic**      | Structured output and data validation  |
-| **python-dotenv** | Environment variable management        |
-| **Streamlit**     | Optional chatbot interface             |
-| **Git & GitHub**  | Version control and project management |
+| Technology        | Purpose                                           |
+| ----------------- | ------------------------------------------------- |
+| **Python**        | Primary programming language                      |
+| **LangChain**     | LLM application development                       |
+| **LangGraph**     | Agent and workflow orchestration                  |
+| **OpenAI**        | Large language models                             |
+| **Pydantic**      | Structured output and data validation             |
+| **python-dotenv** | Environment variable management                   |
+| **SQLite**        | Conversation metadata and persistent storage      |
+| **Git & GitHub**  | Version control and project management            |
+| **Streamlit**     | Optional chatbot interface for future development |
 
 ## 📂 Repository Structure
 
@@ -37,12 +38,9 @@ agentic-chatbot/
 │
 ├── README.md
 ├── .gitignore
-├── requirements.txt
 ├── .env.example
-│
-├── chatbot/
-│   ├── __init__.py
-│   └── ...
+├── agentic_chatbot.py
+├── chatbot_memory.db
 │
 ├── tools/
 │   └── ...
@@ -51,6 +49,8 @@ agentic-chatbot/
 ```
 
 _The repository structure will evolve as new concepts and functionalities are implemented._
+
+**Note:** `chatbot_memory.db` is generated locally when the application runs. It should not be committed to GitHub.
 
 ## 📚 Learning Progress
 
@@ -65,11 +65,20 @@ This project is being developed incrementally through hands-on implementation.
 - [x] State management
 - [x] LangGraph integration
 - [x] Checkpointing and persistence
+- [x] SQLite database integration
+- [x] Multiple conversation thread support
+- [x] Automatic conversation title generation
+- [x] Conversation history restoration
+- [x] Thread switching
+- [x] Thread renaming
+- [x] Thread deletion
+- [x] Streaming LLM responses
 - [ ] Tool calling and integration
 - [ ] Agentic decision-making
-- [ ] Memory management
+- [ ] Cross-thread memory management
 - [ ] Advanced agentic workflows
-- [ ] Additional functionalities
+- [ ] FastAPI backend integration
+- [ ] Frontend integration
 
 _This checklist will be updated as new features are implemented._
 
@@ -101,6 +110,12 @@ Activate the environment on Windows:
 pip install -r requirements.txt
 ```
 
+Required packages include:
+
+```bash
+pip install langchain langchain-openai langgraph langgraph-checkpoint-sqlite python-dotenv
+```
+
 ### 4. Configure environment variables
 
 Create a `.env` file in the project root and add your OpenAI API key:
@@ -113,19 +128,39 @@ OPENAI_API_KEY=your_openai_api_key
 
 ## ▶️ Running the Project
 
-The execution command depends on the current implementation and project structure.
-
-For a Python-based chatbot, you may run:
+Run the chatbot using:
 
 ```bash
 python agentic_chatbot.py
 ```
 
-If a Streamlit interface is implemented later, it can be launched using:
+### Available CLI Commands
 
-```bash
-streamlit run app.py
-```
+| Command    | Description                       |
+| ---------- | --------------------------------- |
+| `/new`     | Create a new conversation         |
+| `/threads` | Display all conversations         |
+| `/switch`  | Switch between conversations      |
+| `/history` | View current conversation history |
+| `/rename`  | Rename the current conversation   |
+| `/delete`  | Delete a conversation             |
+| `/help`    | Display available commands        |
+| `/exit`    | Exit the chatbot                  |
+
+## 💾 Conversation Persistence
+
+The chatbot uses **LangGraph SQLite Checkpointing** to persist conversation state.
+
+Key capabilities include:
+
+- Save conversation history in a local SQLite database.
+- Restore previous conversations after restarting the application.
+- Maintain separate histories using unique thread IDs.
+- Automatically generate conversation titles based on the first user message.
+- Rename and delete existing conversations.
+- Track conversation activity and metadata.
+
+Each conversation is associated with a unique `thread_id`, allowing multiple independent conversations to be maintained.
 
 ## 💡 Learning Approach
 
@@ -143,7 +178,7 @@ The objective is not simply to build a chatbot, but to understand the engineerin
 
 ## 🚀 Project Status
 
-\<text>Ongoing — new concepts and functionalities are added as the learning journey progresses.\</text>
+**Ongoing** — new concepts and functionalities are added as the learning journey progresses.
 
 ---
 

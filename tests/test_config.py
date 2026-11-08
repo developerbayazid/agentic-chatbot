@@ -1,4 +1,13 @@
-from agentic_chatbot.config import Settings
+import os
+
+from agentic_chatbot.config import Settings, export_langsmith_env
+
+LANGSMITH_KEYS = (
+    "LANGSMITH_TRACING",
+    "LANGSMITH_API_KEY",
+    "LANGSMITH_PROJECT",
+    "LANGSMITH_ENDPOINT",
+)
 
 
 def test_defaults_without_env(monkeypatch):
@@ -59,6 +68,42 @@ def test_reads_env_file(tmp_path, monkeypatch):
     assert settings.database_path == "file.db"
     assert settings.llm_model == "file-model"
     assert settings.llm_temperature == 0.3
+
+
+def test_export_langsmith_env(monkeypatch):
+    for key in LANGSMITH_KEYS:
+        monkeypatch.delenv(key, raising=False)
+
+    settings = Settings(
+        langsmith_tracing=True,
+        langsmith_api_key="ls-key",
+        langsmith_project="my-project",
+        langsmith_endpoint="https://example.com",
+        _env_file=None,
+    )
+
+    export_langsmith_env(settings)
+
+    assert os.environ["LANGSMITH_TRACING"] == "true"
+    assert os.environ["LANGSMITH_API_KEY"] == "ls-key"
+    assert os.environ["LANGSMITH_PROJECT"] == "my-project"
+    assert os.environ["LANGSMITH_ENDPOINT"] == "https://example.com"
+
+
+def test_export_langsmith_env_does_not_override_existing(monkeypatch):
+    monkeypatch.setenv("LANGSMITH_TRACING", "false")
+    monkeypatch.setenv("LANGSMITH_PROJECT", "existing")
+
+    settings = Settings(
+        langsmith_tracing=True,
+        langsmith_project="file-project",
+        _env_file=None,
+    )
+
+    export_langsmith_env(settings)
+
+    assert os.environ["LANGSMITH_TRACING"] == "false"
+    assert os.environ["LANGSMITH_PROJECT"] == "existing"
 
 
 def test_explicit_arguments_override_environment(monkeypatch):

@@ -6,8 +6,9 @@ LangChain, and LangGraph.
 The application is currently a modular, interactive **CLI**. It preserves
 thread-isolated conversations in SQLite through LangGraph's `SqliteSaver`,
 generates conversation titles automatically, and streams model responses token by
-token. The code is split into presentation, service, graph, and persistence layers
-so a FastAPI backend can be added later without rewriting business logic.
+token. Optional LangSmith tracing sends runs to LangSmith for debugging and
+monitoring. The code is split into presentation, service, graph, and persistence
+layers so a FastAPI backend can be added later without rewriting business logic.
 
 For the full design and migration plan, see [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
@@ -29,6 +30,7 @@ For the full design and migration plan, see [`ARCHITECTURE.md`](./ARCHITECTURE.m
 | **LangChain**                     | LLM application development              |
 | **LangGraph**                     | Graph-based workflow orchestration       |
 | **LangGraph SQLite Checkpointer** | Conversation state persistence           |
+| **LangSmith**                     | Tracing and observability                |
 | **OpenAI**                        | Large language models                    |
 | **Pydantic / pydantic-settings**  | Configuration loading and validation     |
 | **SQLite**                        | Thread metadata and checkpoint storage   |
@@ -53,7 +55,7 @@ agentic-chatbot/
 │       ├── __main__.py          # python -m agentic_chatbot entry point
 │       ├── cli.py               # Terminal UI and command loop
 │       ├── container.py         # Composition root (wires all resources)
-│       ├── config.py            # pydantic-settings configuration
+│       ├── config.py            # settings + LangSmith env export
 │       ├── llm.py               # ChatOpenAI factory
 │       ├── database.py          # SQLite connection + schema
 │       ├── models.py            # Thread and TurnEvent dataclasses
@@ -126,11 +128,23 @@ LLM_TEMPERATURE=0.0
 SYSTEM_PROMPT=You are a helpful AI assistant.
 ```
 
+Optional LangSmith tracing (defaults shown):
+
+```env
+LANGSMITH_TRACING=false
+LANGSMITH_API_KEY=
+LANGSMITH_PROJECT=agentic-chatbot
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+```
+
 Notes:
 
 - `DATABASE_PATH` defaults to `chatbot_memory.db` in the current directory.
 - An existing `chatbot_memory.db` is reused as-is; the schema matches previous
   versions of the project.
+- `LANGSMITH_TRACING=true` with `LANGSMITH_API_KEY` set enables tracing. See
+  [Observability with LangSmith](#observability-with-langsmith).
+- Variables already set in the OS environment take precedence over `.env`.
 - `.env` is ignored by Git. Never commit API keys.
 
 ## Running the Chatbot
@@ -182,6 +196,20 @@ agentic-chatbot = "agentic_chatbot:main"
 The CLI prints these events directly. A future SSE endpoint can map the same
 events to `event: token` / `event: done` without changing the service.
 
+## Observability with LangSmith
+
+Tracing is off by default. Set `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` in
+`.env` to send each run to LangSmith. `LANGSMITH_PROJECT` selects the project
+(default `agentic-chatbot`), and `LANGSMITH_ENDPOINT` targets a self-hosted
+instance when set (default `https://api.smith.langchain.com`).
+
+LangChain and LangSmith read tracing configuration from the process environment,
+not from the `Settings` object. `get_settings()` therefore exports the
+`langsmith_*` settings into `os.environ` before the LLM and graph are created, so
+`.env` values take effect for both `uv run agentic-chatbot` and
+`uv run python -m agentic_chatbot`. Values already present in the OS environment
+are not overwritten.
+
 ## SQLite Persistence
 
 One SQLite database holds two independent concerns:
@@ -230,6 +258,7 @@ uv run python -m compileall -q src/agentic_chatbot
 - [x] Streaming LLM responses
 - [x] Modular, layered project structure
 - [x] Automated test suite
+- [x] LangSmith observability and tracing
 - [ ] FastAPI backend integration
 - [ ] Tool calling and integration
 - [ ] Agentic decision-making
@@ -241,6 +270,7 @@ uv run python -m compileall -q src/agentic_chatbot
 
 The modular CLI is operational. Conversation threads, automatic titles, history,
 streaming, and SQLite persistence all run through the service layer under
-`src/agentic_chatbot/`. FastAPI is not part of the current runtime; it is the next
-planned milestone, and `ARCHITECTURE.md` documents how to wire it in without
-touching the services.
+`src/agentic_chatbot/`. LangSmith tracing is available when enabled through
+`.env`. FastAPI is not part of the current runtime; it is the next planned
+milestone, and `ARCHITECTURE.md` documents how to wire it in without touching the
+services.

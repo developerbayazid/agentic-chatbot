@@ -1,62 +1,210 @@
-# Agentic Chatbot
+# Agentic AI Chatbot
 
-A hands-on project focused on learning and building an **Agentic AI Chatbot** using Python, LangChain, and LangGraph.
+A hands-on project for learning and building an **Agentic AI Chatbot** with Python,
+LangChain, and LangGraph.
 
-This repository follows a practical, project-based learning approach, implementing chatbot capabilities step by step — from basic LLM interactions and conversation management to advanced agentic workflows.
+The application is currently a modular, interactive **CLI**. It preserves
+thread-isolated conversations in SQLite through LangGraph's `SqliteSaver`,
+generates conversation titles automatically, and streams model responses token by
+token. The code is split into presentation, service, graph, and persistence layers
+so a FastAPI backend can be added later without rewriting business logic.
 
-The primary goal is to understand how AI agents work internally, how their components interact, and how to build intelligent systems capable of reasoning, making decisions, and executing tasks.
+For the full design and migration plan, see [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
-## 🎯 Project Goals
+## Project Goals
 
 - Build an AI-powered conversational chatbot.
 - Understand the fundamentals of Agentic AI.
 - Explore LangChain and LangGraph through practical implementation.
-- Implement chatbot functionalities incrementally.
-- Understand state management and conversation flow.
-- Explore tool calling and external tool integration.
-- Learn how AI agents make decisions and execute tasks.
-- Experiment with memory, persistence, and agentic workflows.
+- Preserve conversation history and thread isolation with SQLite.
+- Keep business logic framework-agnostic so it is reusable by a CLI or an API.
+- Prepare the architecture for tool calling, conditional routing, and agent nodes.
+- Add a FastAPI backend and frontend later without restructuring the core.
 
-## 🛠️ Tech Stack
+## Tech Stack
 
-| Technology        | Purpose                                           |
-| ----------------- | ------------------------------------------------- |
-| **Python**        | Primary programming language                      |
-| **LangChain**     | LLM application development                       |
-| **LangGraph**     | Agent and workflow orchestration                  |
-| **OpenAI**        | Large language models                             |
-| **Pydantic**      | Structured output and data validation             |
-| **python-dotenv** | Environment variable management                   |
-| **SQLite**        | Conversation metadata and persistent storage      |
-| **Git & GitHub**  | Version control and project management            |
-| **Streamlit**     | Optional chatbot interface for future development |
+| Technology                        | Purpose                                  |
+| --------------------------------- | ---------------------------------------- |
+| **Python**                        | Primary language                         |
+| **LangChain**                     | LLM application development              |
+| **LangGraph**                     | Graph-based workflow orchestration       |
+| **LangGraph SQLite Checkpointer** | Conversation state persistence           |
+| **OpenAI**                        | Large language models                    |
+| **Pydantic / pydantic-settings**  | Configuration loading and validation     |
+| **SQLite**                        | Thread metadata and checkpoint storage   |
+| **uv**                            | Package and project management           |
+| **FastAPI / Uvicorn**             | Planned HTTP layer (not implemented yet) |
+| **pytest**                        | Planned test suite (not added yet)       |
 
-## 📂 Repository Structure
+## Project Structure
 
 ```text
 agentic-chatbot/
-│
+├── ARCHITECTURE.md              # Detailed architecture and FastAPI migration plan
 ├── README.md
-├── .gitignore
+├── pyproject.toml
+├── uv.lock
 ├── .env.example
-├── agentic_chatbot.py
-├── chatbot_memory.db
+├── chatbot_memory.db            # SQLite: thread metadata + LangGraph checkpoints
 │
-├── tools/
-│   └── ...
+├── src/
+│   └── agentic_chatbot/
+│       ├── __init__.py          # Exposes main() for the console script
+│       ├── __main__.py          # python -m agentic_chatbot entry point
+│       ├── cli.py               # Terminal UI and command loop
+│       ├── container.py         # Composition root (wires all resources)
+│       ├── config.py            # pydantic-settings configuration
+│       ├── llm.py               # ChatOpenAI factory
+│       ├── database.py          # SQLite connection + schema
+│       ├── models.py            # Thread and TurnEvent dataclasses
+│       ├── repository.py        # ThreadRepository (thread-table SQL)
+│       ├── graph/
+│       │   ├── state.py         # ChatState
+│       │   ├── nodes.py         # chat node
+│       │   └── workflow.py      # compiled LangGraph
+│       └── services/
+│           ├── chat_service.py   # streaming turns + history
+│           ├── thread_service.py # thread lifecycle
+│           └── title_service.py  # automatic titles
 │
-└── ...
+├── notebooks/                   # Learning notebooks
+└── data/                        # Optional alternate database location
 ```
 
-_The repository structure will evolve as new concepts and functionalities are implemented._
+## Architecture Summary
 
-**Note:** `chatbot_memory.db` is generated locally when the application runs. It should not be committed to GitHub.
+The application follows a one-way dependency flow:
 
-## 📚 Learning Progress
+```text
+cli.py  →  container.py  →  services  →  graph / repository  →  SQLite
+```
 
-This project is being developed incrementally through hands-on implementation.
+- **Presentation** (`cli.py`) — reads input and prints output only.
+- **Services** (`services/`) — chat orchestration, thread lifecycle, titles.
+  Independent of any UI or HTTP framework.
+- **Graph** (`graph/`) — LangGraph state, nodes, and the compiled chatbot.
+- **Persistence** (`repository.py`, `database.py`) — thread metadata SQL.
+- **Checkpointer** — `SqliteSaver` stores conversation messages and graph state.
+- **Container** (`container.py`) — builds and owns the SQLite connection,
+  checkpointer, LLM, compiled graph, and services.
 
-### Implementation Checklist
+`ARCHITECTURE.md` explains each module, the request flow, the streaming event
+contract, and the exact steps to add FastAPI later.
+
+## Installation
+
+This project uses [uv](https://docs.astral.sh/uv/).
+
+```bash
+git clone https://github.com/developerbayazid/agentic-chatbot.git
+cd agentic-chatbot
+
+uv sync
+```
+
+## Environment Configuration
+
+Create a `.env` file from the template:
+
+```bash
+cp .env.example .env
+```
+
+Required:
+
+```env
+OPENAI_API_KEY=your_openai_api_key
+```
+
+Optional (defaults shown):
+
+```env
+DATABASE_PATH=chatbot_memory.db
+LLM_MODEL=gpt-4o-mini
+LLM_TEMPERATURE=0.0
+SYSTEM_PROMPT=You are a helpful AI assistant.
+```
+
+Notes:
+
+- `DATABASE_PATH` defaults to `chatbot_memory.db` in the current directory.
+- An existing `chatbot_memory.db` is reused as-is; the schema matches previous
+  versions of the project.
+- `.env` is ignored by Git. Never commit API keys.
+
+## Running the Chatbot
+
+Activating the virtual environment is optional; `uv run` uses it automatically.
+
+```bash
+uv run agentic-chatbot
+```
+
+Or through the package module entry point:
+
+```bash
+uv run python -m agentic_chatbot
+```
+
+Both commands start the interactive CLI. On startup it restores the most recently
+updated conversation, or creates a new one.
+
+The console script is declared in `pyproject.toml`:
+
+```toml
+[project.scripts]
+agentic-chatbot = "agentic_chatbot:main"
+```
+
+## CLI Commands
+
+| Command         | Description                               |
+| --------------- | ----------------------------------------- |
+| `/new`          | Create a new conversation                 |
+| `/threads`      | List all conversations                    |
+| `/switch`       | Switch to another conversation by ID      |
+| `/history`      | Show the current conversation history     |
+| `/rename`       | Rename the current conversation           |
+| `/delete`       | Delete a conversation and its checkpoints |
+| `/help`         | Show available commands                   |
+| `/exit`         | Exit the chatbot                          |
+| _anything else_ | Send a chat message                       |
+
+## Streaming
+
+`ChatService.stream_turn()` yields transport-neutral events:
+
+- `TurnEvent(type="token", content="...")` for each streamed chunk.
+- `TurnEvent(type="done", title=...)` when the turn is persisted; `title` is set
+  only when a new title was generated on the first turn.
+
+The CLI prints these events directly. A future SSE endpoint can map the same
+events to `event: token` / `event: done` without changing the service.
+
+## SQLite Persistence
+
+One SQLite database holds two independent concerns:
+
+1. **Thread metadata** — the `threads` table (`thread_id`, `title`,
+   `created_at`, `updated_at`), managed by `ThreadRepository`.
+2. **Conversation state** — LangGraph checkpoint tables created and managed by
+   `SqliteSaver.setup()`.
+
+Deleting a thread removes its checkpoints first, then its metadata. Deleting a
+thread while it is active creates a replacement conversation.
+
+## Development
+
+```bash
+# Byte-compile the package to catch syntax errors
+uv run python -m compileall -q src/agentic_chatbot
+```
+
+There is no automated test suite checked in yet. The refactor was validated with
+package import checks, a container smoke test against a temporary SQLite
+database, and a fake-model test of the streaming event logic.
+
+## Learning Progress
 
 - [x] Initial project setup
 - [x] Basic LLM integration
@@ -73,113 +221,18 @@ This project is being developed incrementally through hands-on implementation.
 - [x] Thread renaming
 - [x] Thread deletion
 - [x] Streaming LLM responses
+- [x] Modular, layered project structure
+- [ ] FastAPI backend integration
 - [ ] Tool calling and integration
 - [ ] Agentic decision-making
 - [ ] Cross-thread memory management
 - [ ] Advanced agentic workflows
-- [ ] FastAPI backend integration
 - [ ] Frontend integration
 
-_This checklist will be updated as new features are implemented._
+## Current Status
 
-## ⚙️ Installation & Setup
-
-### 1. Clone the repository
-
-```bash
-git clone https://github.com/YOUR_USERNAME/agentic-chatbot.git
-
-cd agentic-chatbot
-```
-
-### 2. Create a virtual environment
-
-```bash
-python -m venv .venv
-```
-
-Activate the environment on Windows:
-
-```powershell
-.venv\Scripts\activate
-```
-
-### 3. Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-Required packages include:
-
-```bash
-pip install langchain langchain-openai langgraph langgraph-checkpoint-sqlite python-dotenv
-```
-
-### 4. Configure environment variables
-
-Create a `.env` file in the project root and add your OpenAI API key:
-
-```env
-OPENAI_API_KEY=your_openai_api_key
-```
-
-**Important:** Never commit your `.env` file or expose your API key. Use `.env.example` to document the required environment variables.
-
-## ▶️ Running the Project
-
-Run the chatbot using:
-
-```bash
-python agentic_chatbot.py
-```
-
-### Available CLI Commands
-
-| Command    | Description                       |
-| ---------- | --------------------------------- |
-| `/new`     | Create a new conversation         |
-| `/threads` | Display all conversations         |
-| `/switch`  | Switch between conversations      |
-| `/history` | View current conversation history |
-| `/rename`  | Rename the current conversation   |
-| `/delete`  | Delete a conversation             |
-| `/help`    | Display available commands        |
-| `/exit`    | Exit the chatbot                  |
-
-## 💾 Conversation Persistence
-
-The chatbot uses **LangGraph SQLite Checkpointing** to persist conversation state.
-
-Key capabilities include:
-
-- Save conversation history in a local SQLite database.
-- Restore previous conversations after restarting the application.
-- Maintain separate histories using unique thread IDs.
-- Automatically generate conversation titles based on the first user message.
-- Rename and delete existing conversations.
-- Track conversation activity and metadata.
-
-Each conversation is associated with a unique `thread_id`, allowing multiple independent conversations to be maintained.
-
-## 💡 Learning Approach
-
-I follow a practical, project-based learning process:
-
-1. Study each concept and understand its purpose.
-2. Implement the functionality using Python.
-3. Explore how the underlying components work.
-4. Test implementations with different inputs.
-5. Document important concepts and observations.
-6. Refactor and improve the implementation.
-7. Gradually introduce more advanced agentic capabilities.
-
-The objective is not simply to build a chatbot, but to understand the engineering principles behind modern Agentic AI systems.
-
-## 🚀 Project Status
-
-**Ongoing** — new concepts and functionalities are added as the learning journey progresses.
-
----
-
-**This project is a continuous learning journey toward understanding and building practical Agentic AI systems.**
+The modular CLI is operational. Conversation threads, automatic titles, history,
+streaming, and SQLite persistence all run through the service layer under
+`src/agentic_chatbot/`. FastAPI is not part of the current runtime; it is the next
+planned milestone, and `ARCHITECTURE.md` documents how to wire it in without
+touching the services.

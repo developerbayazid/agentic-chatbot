@@ -34,6 +34,7 @@ agentic-chatbot/
 ├── uv.lock
 ├── .env / .env.example
 ├── chatbot_memory.db            # SQLite: thread metadata + LangGraph checkpoints
+├── tests/                       # Pytest suite: fakes, temp SQLite databases
 ├── notebooks/                   # Learning notebooks
 │
 └── src/
@@ -545,7 +546,15 @@ uv run python -m agentic_chatbot
 uv run python -m compileall -q src/agentic_chatbot
 ```
 
-There is no test suite checked in yet. The refactor was validated with:
-package import checks, a container smoke test using a temporary SQLite database
-(thread create/list/rename/delete/history), and a fake-chatbot test of
-`ChatService.stream_turn` event handling. Add `tests/` when the API layer lands.
+Run the suite with:
+
+```bash
+uv run pytest
+```
+
+Tests use `tmp_path` SQLite databases plus fake graph, LLM, title, thread, and
+checkpointer doubles (`tests/fakes.py`), so no OpenAI calls are made. Coverage
+includes configuration precedence, container wiring and schema creation, thread
+service CRUD and ordering, checkpoint cleanup on delete, `ChatService`
+streaming/title behavior, CLI output and the interactive command loop, and
+package entry points.

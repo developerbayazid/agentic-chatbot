@@ -34,7 +34,7 @@ For the full design and migration plan, see [`ARCHITECTURE.md`](./ARCHITECTURE.m
 | **SQLite**                        | Thread metadata and checkpoint storage   |
 | **uv**                            | Package and project management           |
 | **FastAPI / Uvicorn**             | Planned HTTP layer (not implemented yet) |
-| **pytest**                        | Planned test suite (not added yet)       |
+| **pytest**                        | Automated tests (no OpenAI calls)        |
 
 ## Project Structure
 
@@ -67,6 +67,7 @@ agentic-chatbot/
 │           ├── thread_service.py # thread lifecycle
 │           └── title_service.py  # automatic titles
 │
+├── tests/                       # Pytest suite (fakes + temporary SQLite)
 ├── notebooks/                   # Learning notebooks
 └── data/                        # Optional alternate database location
 ```
@@ -193,16 +194,22 @@ One SQLite database holds two independent concerns:
 Deleting a thread removes its checkpoints first, then its metadata. Deleting a
 thread while it is active creates a replacement conversation.
 
-## Development
+## Running Tests
 
 ```bash
-# Byte-compile the package to catch syntax errors
-uv run python -m compileall -q src/agentic_chatbot
+uv run pytest
 ```
 
-There is no automated test suite checked in yet. The refactor was validated with
-package import checks, a container smoke test against a temporary SQLite
-database, and a fake-model test of the streaming event logic.
+The suite uses temporary SQLite databases and fake graph/LLM implementations, so
+it never calls the OpenAI API. It covers configuration precedence, container
+wiring and schema creation, thread lifecycle and ordering, checkpoint cleanup on
+delete, streaming and title generation, CLI rendering, the interactive command
+loop, and package entry points.
+
+```bash
+# Optional: byte-compile the package
+uv run python -m compileall -q src/agentic_chatbot
+```
 
 ## Learning Progress
 
@@ -222,6 +229,7 @@ database, and a fake-model test of the streaming event logic.
 - [x] Thread deletion
 - [x] Streaming LLM responses
 - [x] Modular, layered project structure
+- [x] Automated test suite
 - [ ] FastAPI backend integration
 - [ ] Tool calling and integration
 - [ ] Agentic decision-making

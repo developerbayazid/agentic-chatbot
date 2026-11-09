@@ -48,8 +48,8 @@ agentic-chatbot/
         ├── config.py            # pydantic-settings Settings (env + .env)
         ├── llm.py               # ChatOpenAI factory
         ├── database.py          # SQLite connection + schema creation
-        ├── models.py            # Domain dataclasses (Thread, TurnEvent)
-        ├── repository.py        # ThreadRepository: all thread-table SQL
+        ├── models.py            # Domain dataclasses (Thread, Note, TurnEvent)
+        ├── repository.py        # ThreadRepository + NotesRepository
         │
         ├── graph/
         │   ├── __init__.py
@@ -68,9 +68,9 @@ agentic-chatbot/
             ├── builtin.py         # calculator, get_current_time
             ├── utilities.py       # local helpers (hash, base64, units, ...)
             ├── life.py            # loan, tip, BMI, age, timezone, fuel
-            ├── notes.py           # in-memory note taking
+            ├── notes.py           # database-backed note tools
             ├── mocks.py           # simulated API tools (weather, search, ...)
-            └── registry.py        # ALL_TOOLS / get_tools()
+            └── registry.py        # STATIC_TOOLS / get_tools(repo)
 ```
 
 ---
@@ -138,7 +138,8 @@ class ChatbotContainer:
         self.checkpointer.setup()                                    # 4
 
         self.llm = create_llm(settings)                              # 5
-        self.tools = get_tools()                                     # 5b
+        self.notes_repository = NotesRepository(self.connection)    # 5a
+        self.tools = get_tools(self.notes_repository)                # 5b
         self.chat_llm = create_llm(settings, self.tools)             # 5c
         self.chatbot = build_chatbot(                               # 6
             self.chat_llm, self.checkpointer, self.tools
@@ -162,11 +163,12 @@ class ChatbotContainer:
 
 1. Open one SQLite connection (`check_same_thread=False`) with
    `row_factory = sqlite3.Row`.
-2. Create the `threads` table if missing.
+2. Create the `threads` and `notes` tables if missing.
 3. Wrap the same connection in LangGraph's `SqliteSaver`.
 4. Let the checkpointer create/upgrade its own tables.
 5. Build the untooled chat model from settings (used for title generation).
-   5b. Load the tool registry.
+   5a. Build the notes repository over the shared connection.
+   5b. Load the tool registry, binding note tools to that repository.
    5c. Build a tool-bound copy of the model (`bind_tools`).
 6. Compile the graph exactly once, passing the bound model and the tools.
 7. Wire the repository and services.
@@ -208,14 +210,16 @@ the raw `ChatOpenAI` is returned (used for title generation).
 
 - `create_connection(path)` — opens SQLite with `check_same_thread=False` and
   `sqlite3.Row` rows.
-- `init_schema(connection)` — creates the `threads` table.
-- `THREADS_TABLE_SCHEMA` — the DDL in one place.
+- `init_schema(connection)` — creates the `threads` and `notes` tables.
+- `THREADS_TABLE_SCHEMA`, `NOTES_TABLE_SCHEMA` — the DDL in one place each.
 
 ### `models.py`
 
 - `Thread` — frozen dataclass: `thread_id`, `title`, `created_at`,
   `updated_at`. Used by the repository, services, and CLI (and later Pydantic
   response schemas).
+- `Note` — frozen dataclass: `note_id`, `thread_id`, `title`, `content`,
+  `created_at`. Used by `NotesRepository` and the note tools.
 - `TurnEvent` — frozen dataclass emitted by `ChatService.stream_turn`:
   - `type="token"`, `content="..."` for each streamed chunk
   - `type="tool_call"`, `name=...`, `content=<JSON args>` when the model requests
@@ -242,6 +246,21 @@ to plain text or Server-Sent Events without change.
 
 It holds one cursor over the shared connection and commits after each write.
 No business rules live here (no title truncation, no checkpoint cleanup).
+
+`NotesRepository` owns **all SQL against the `notes` table**:
+
+| Method                              | SQL                                                            |
+| ----------------------------------- | -------------------------------------------------------------- |
+| `create(thread_id, title, content)` | `INSERT`, returns `Note`                                       |
+| `get(thread_id, note_id)`           | `SELECT ... WHERE thread_id AND note_id`                       |
+| `list_all(thread_id)`               | `SELECT ... WHERE thread_id ORDER BY created_at ASC`           |
+| `search(thread_id, query)`          | `SELECT ... WHERE thread_id AND (title/content LIKE ?)`        |
+| `delete(thread_id, note_id)`        | `DELETE ... WHERE thread_id AND note_id`                       |
+
+Every method takes a `thread_id`, and all SQL filters on it. Append, list,
+search, and delete therefore cannot cross conversation boundaries. Notes are
+durable: they live in `notes` table rows, independent of LangGraph checkpoints,
+so they survive process restarts.
 
 ### `services/thread_service.py`
 
@@ -326,9 +345,13 @@ return clear `"Error: ..."` strings instead of raising, so the model can recover
 - `life.py` — fully local everyday calculators: `calculate_loan_payment`,
   `calculate_tip_split`, `calculate_bmi`, `calculate_age`, `days_between`,
   `convert_timezone` (via `zoneinfo`), `estimate_fuel_cost`.
-- `notes.py` — in-memory note taking: `save_note`, `list_notes`,
-  `search_notes`, `delete_note`. Notes live for the process lifetime; swap
-  `_NOTES` for a persistent store when needed.
+- `notes.py` — database-backed, per-conversation note taking via
+  `create_note_tools(repository)`: `save_note`, `list_notes`, `search_notes`,
+  `delete_note`. Each tool declares a `config: RunnableConfig` parameter (injected
+  by LangChain, hidden from the model schema) and reads
+  `config["configurable"]["thread_id"]` to scope every repository call. Notes
+  therefore persist across turns and restarts while staying private to the thread
+  that created them.
 - `mocks.py` — simulated implementations of common API-backed tools:
   `web_search`, `fetch_url`, `get_news`, `get_weather`, `get_stock_price`,
   `convert_currency`, `send_email`, `send_slack_message`,
@@ -337,9 +360,9 @@ return clear `"Error: ..."` strings instead of raising, so the model can recover
   `"mock": true`; calendar events live in memory for the process lifetime.
   Replace a tool body with a real client call when its credentials are
   available — signatures and return shapes can stay the same.
-- `registry.py` — `ALL_TOOLS` (36 tools) and `get_tools()`, the single place to
-  register a new tool. `container.py` passes the result to both `create_llm` and
-  `build_chatbot`.
+- `registry.py` — `STATIC_TOOLS` (32 repository-free tools) plus
+  `get_tools(notes_repository)`, which appends the four note tools for a total of
+  36. `container.py` passes the result to both `create_llm` and `build_chatbot`.
 
 **Adding a tool** is additive:
 
@@ -352,14 +375,18 @@ def word_count(text: str) -> str:
     return str(len(text.split()))
 ```
 
-Append the function to `ALL_TOOLS` in `registry.py`. Nothing else changes:
+Append the function to `STATIC_TOOLS` in `registry.py`. Nothing else changes:
 `create_llm` binds the new schema and `ToolNode` can execute it. Prefer
 returning a plain string or JSON string; return `"Error: ..."` for bad input so
 the model can correct itself instead of the run failing.
 
+Tools that need shared state (like notes) are built by a `create_*_tools()`
+factory that closes over a repository, and `get_tools(repository)` includes them.
+This keeps tools dependent only on their repository rather than on global state.
+
 Mock tools are intentionally honest: JSON responses include `"mock": true`, no
-network calls are made, and the modeled state (notes, calendar) lives in module
-memory for the process lifetime.
+network calls are made, and the modeled state (calendar) lives in module memory
+for the process lifetime. Notes are the exception: they are durable SQLite rows.
 
 ### `cli.py`
 
@@ -427,7 +454,8 @@ chat_node (tool-bound LLM)
              ▼
         ToolNode executes each call
              ├─ calculator, get_current_time        (local)
-             ├─ utilities / life / notes            (local)
+             ├─ utilities / life                    (local)
+             ├─ notes                               (SQLite, per thread)
              └─ mocks                               (simulated data)
              │
              ▼
@@ -460,7 +488,7 @@ LangGraph's default `recursion_limit` (25) caps the number of round trips.
 
 ## 7. Persistence model
 
-One SQLite database (`DATABASE_PATH`) holds two independent concerns:
+One SQLite database (`DATABASE_PATH`) holds three independent concerns:
 
 ### 7.1 Thread metadata — owned by this project
 
@@ -473,7 +501,29 @@ CREATE TABLE IF NOT EXISTS threads (
 );
 ```
 
-### 7.2 Conversation state — owned by LangGraph
+### 7.2 Notes — owned by this project
+
+```sql
+CREATE TABLE IF NOT EXISTS notes (
+    note_id    TEXT PRIMARY KEY,
+    thread_id  TEXT NOT NULL,
+    title      TEXT NOT NULL,
+    content    TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_notes_thread_id ON notes (thread_id);
+```
+
+`NotesRepository` owns all SQL against this table, and every query filters by
+`thread_id`. Notes are independent of LangGraph state: they survive restarts and
+are removed only by `delete_note` from their own thread.
+
+`init_schema` also migrates databases created before note scoping: when the
+`notes` table lacks `thread_id`, `ALTER TABLE` adds it with a `''` default. Those
+legacy rows are intentionally invisible to every conversation.
+
+### 7.3 Conversation state — owned by LangGraph
 
 `SqliteSaver.setup()` creates and manages its own checkpoint tables
 (`checkpoints`, checkpoint blobs/writes and migrations; exact names are
@@ -484,11 +534,12 @@ through the compiled graph and `checkpointer.delete_thread()`.
 The split is deliberate:
 
 - Metadata is cheap to query and render in a thread list.
+- Notes are small durable records, independent of any conversation.
 - Message history is managed by the checkpointer so LangGraph can replay and
   resume graph state.
 
-Because both share one connection, `delete_thread` removes checkpoints and
-metadata together.
+Because all three share one connection, `delete_thread` removes checkpoints and
+metadata together while leaving notes intact.
 
 ---
 
@@ -624,9 +675,10 @@ where that change belongs.
 
 - **New graph node** — add a factory in `graph/nodes.py`, wire the edge in
   `graph/workflow.py`. `ChatService` is unchanged.
-- **New tool** — add a `@tool` function and append it to `ALL_TOOLS` in
-  `tools/registry.py`. `create_llm` binding and `ToolNode` pick it up
-  automatically; no graph or service changes.
+- **New tool** — add a `@tool` function and append it to `STATIC_TOOLS` in
+  `tools/registry.py` (or build it in a `create_*_tools(repository)` factory for
+  stateful tools). `create_llm` binding and `ToolNode` pick it up automatically;
+  no graph or service changes.
 - **Agents / more routing** — add nodes in `graph/nodes.py` and edges in
   `graph/workflow.py`; `ChatService` is unchanged.
 - **Different database** — change `database.py` and `repository.py`; services and
@@ -660,12 +712,12 @@ where that change belongs.
 8. **Mock tools return simulated data** — `tools/mocks.py` never calls the
    network and marks responses with `"mock": true`. Do not present their output
    as live data; replace each body with a real client as keys are added.
-9. **Notes and calendar state are in-memory** — `tools/notes.py` and the mock
-   calendar reset when the process exits. Move them to SQLite or files for
-   durability.
+9. **Mock calendar state is in-memory** — events created by
+   `create_calendar_event` reset when the process exits. Notes are the exception:
+   they are persisted in SQLite and survive restarts.
 10. **Every tool schema is sent to the model on every call** — 36 tools increase
-    prompt size and can slow tool selection. Trim `ALL_TOOLS` (or gate tools by
-    config) if latency or cost matters.
+    prompt size and can slow tool selection. Trim `STATIC_TOOLS` (or gate tools
+    by config) if latency or cost matters.
 
 ---
 
@@ -695,8 +747,10 @@ checkpointer doubles (`tests/fakes.py`), so no OpenAI calls are made. Coverage
 includes configuration precedence, container wiring and schema creation, thread
 service CRUD and ordering, checkpoint cleanup on delete, `ChatService`
 streaming/title behavior and tool-event emission, the real `ToolNode` loop, every
-tool implementation (core, utilities, life, notes, mocks), CLI output and the
-interactive command loop, and package entry points.
+tool implementation (core, utilities, life, notes, mocks), notes persistence
+across separate SQLite connections, thread isolation of notes, schema migration
+for legacy note tables, CLI output and the interactive command loop, and package
+entry points.
 
 Manual tool checks in the CLI:
 

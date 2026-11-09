@@ -1,70 +1,88 @@
-"""In-memory note-taking tools for everyday use.
+"""Database-backed, per-conversation note-taking tools.
 
-Notes live for the lifetime of the process. Swap ``_NOTES`` for a database or
-file-backed store if notes need to survive restarts.
+Each tool reads the active ``thread_id`` from the LangGraph run config, so a
+conversation can only see and modify its own notes.
 """
 
 import json
-import uuid
-from datetime import datetime, timezone
+from dataclasses import asdict
 
-from langchain_core.tools import tool
+from langchain_core.runnables import RunnableConfig
+from langchain_core.tools import BaseTool, tool
 
-_NOTES: dict[str, dict] = {}
+from agentic_chatbot.repository import NotesRepository
+
+_MISSING_CONTEXT = "Error: no active conversation context for notes."
 
 
 def _to_json(payload: dict) -> str:
     return json.dumps(payload, indent=2, ensure_ascii=False)
 
 
-@tool
-def save_note(title: str, content: str) -> str:
-    """Save a note with a title and body and return its note ID."""
-    if not title.strip():
-        return "Error: title is required."
+def _thread_id(config: RunnableConfig | None) -> str | None:
+    if not config:
+        return None
 
-    note = {
-        "note_id": str(uuid.uuid4()),
-        "title": title.strip(),
-        "content": content,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    }
-    _NOTES[note["note_id"]] = note
+    configurable = config.get("configurable") or {}
+    thread_id = configurable.get("thread_id")
 
-    return _to_json(note)
+    return str(thread_id) if thread_id else None
 
 
-@tool
-def list_notes() -> str:
-    """List all saved notes with their IDs, titles, and creation times."""
-    notes = sorted(_NOTES.values(), key=lambda note: note["created_at"])
+def create_note_tools(repository: NotesRepository) -> list[BaseTool]:
+    """Build the note tools bound to a notes repository."""
 
-    return _to_json({"count": len(notes), "notes": notes})
+    @tool
+    def save_note(title: str, content: str, config: RunnableConfig) -> str:
+        """Save a note for the current conversation and return its note ID."""
+        thread_id = _thread_id(config)
+        if thread_id is None:
+            return _MISSING_CONTEXT
 
+        if not title.strip():
+            return "Error: title is required."
 
-@tool
-def search_notes(query: str) -> str:
-    """Search saved notes by a case-insensitive title or body match."""
-    needle = query.strip().lower()
+        note = repository.create(thread_id, title.strip(), content)
+        return _to_json(asdict(note))
 
-    if not needle:
-        return "Error: query is required."
+    @tool
+    def list_notes(config: RunnableConfig) -> str:
+        """List the current conversation's notes with IDs, titles, and creation times."""
+        thread_id = _thread_id(config)
+        if thread_id is None:
+            return _MISSING_CONTEXT
 
-    matches = [
-        note
-        for note in _NOTES.values()
-        if needle in note["title"].lower() or needle in note["content"].lower()
-    ]
+        notes = [asdict(note) for note in repository.list_all(thread_id)]
+        return _to_json({"count": len(notes), "notes": notes})
 
-    return _to_json({"query": query, "count": len(matches), "notes": matches})
+    @tool
+    def search_notes(query: str, config: RunnableConfig) -> str:
+        """Search the current conversation's notes by title or body."""
+        thread_id = _thread_id(config)
+        if thread_id is None:
+            return _MISSING_CONTEXT
 
+        if not query.strip():
+            return "Error: query is required."
 
-@tool
-def delete_note(note_id: str) -> str:
-    """Delete a saved note by its note ID."""
-    note = _NOTES.pop(note_id.strip(), None)
+        notes = [
+            asdict(note) for note in repository.search(thread_id, query.strip())
+        ]
+        return _to_json({"query": query, "count": len(notes), "notes": notes})
 
-    if note is None:
-        return f"Error: note '{note_id}' not found."
+    @tool
+    def delete_note(note_id: str, config: RunnableConfig) -> str:
+        """Delete one of the current conversation's notes by its note ID."""
+        thread_id = _thread_id(config)
+        if thread_id is None:
+            return _MISSING_CONTEXT
 
-    return _to_json({"deleted": note["note_id"], "title": note["title"]})
+        note = repository.get(thread_id, note_id.strip())
+
+        if note is None:
+            return f"Error: note '{note_id}' not found."
+
+        repository.delete(thread_id, note.note_id)
+        return _to_json({"deleted": note.note_id, "title": note.title})
+
+    return [save_note, list_notes, search_notes, delete_note]

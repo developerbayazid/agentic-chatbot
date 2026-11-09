@@ -59,8 +59,8 @@ agentic-chatbot/
 │       ├── config.py            # settings + LangSmith env export
 │       ├── llm.py               # ChatOpenAI factory
 │       ├── database.py          # SQLite connection + schema
-│       ├── models.py            # Thread and TurnEvent dataclasses
-│       ├── repository.py        # ThreadRepository (thread-table SQL)
+│       ├── models.py            # Thread, Note, and TurnEvent dataclasses
+│       ├── repository.py        # ThreadRepository + NotesRepository
 │       ├── graph/
 │       │   ├── state.py         # ChatState
 │       │   ├── nodes.py         # chat node
@@ -73,9 +73,9 @@ agentic-chatbot/
 │           ├── builtin.py        # calculator, get_current_time
 │           ├── utilities.py      # local helpers (hash, base64, units, ...)
 │           ├── life.py           # loan, tip, BMI, age, timezone, fuel
-│           ├── notes.py          # in-memory note taking
+│           ├── notes.py          # database-backed note tools
 │           ├── mocks.py          # mocked API tools (weather, search, ...)
-│           └── registry.py       # ALL_TOOLS / get_tools()
+│           └── registry.py       # STATIC_TOOLS / get_tools(repo)
 │
 ├── tests/                       # Pytest suite (fakes + temporary SQLite)
 ├── notebooks/                   # Learning notebooks
@@ -198,9 +198,10 @@ agentic-chatbot = "agentic_chatbot:main"
 
 ## Tools
 
-The tool-bound LLM receives every schema in `ALL_TOOLS`. When it emits tool
-calls, LangGraph's `ToolNode` executes them and routes back to the chat node for
-a final answer. Tool activity is printed as it happens:
+The tool-bound LLM receives every schema returned by
+`get_tools(notes_repository)`. When it emits tool calls, LangGraph's `ToolNode`
+executes them and routes back to the chat node for a final answer. Tool activity
+is printed as it happens:
 
 ```text
 Assistant:
@@ -216,12 +217,14 @@ It is currently 27°C in Dhaka.
 | Core                | `builtin.py`   | `calculator`, `get_current_time`                                                                                                                                                                      |
 | Local utilities     | `utilities.py` | `convert_units`, `generate_uuid`, `generate_password`, `hash_text`, `base64_encode`, `base64_decode`, `format_json`, `regex_search`, `summarize_text`                                                 |
 | Everyday life       | `life.py`      | `calculate_loan_payment`, `calculate_tip_split`, `calculate_bmi`, `calculate_age`, `days_between`, `convert_timezone`, `estimate_fuel_cost`                                                            |
-| Notes               | `notes.py`     | `save_note`, `list_notes`, `search_notes`, `delete_note`                                                                                                                                              |
+| Notes (per thread)  | `notes.py`     | `save_note`, `list_notes`, `search_notes`, `delete_note` — scoped to the active conversation                                                                                                           |
 | Mock API services   | `mocks.py`     | `web_search`, `fetch_url`, `get_news`, `get_weather`, `get_stock_price`, `convert_currency`, `send_email`, `send_slack_message`, `create_calendar_event`, `list_calendar_events`, `translate_text`, `find_recipe`, `get_holidays`, `track_package` |
 
 All tools that need an external service (`mocks.py`) return simulated data and
 include `"mock": true` in their JSON. They make **no network calls** and need no
-keys. Calendar events and notes are stored in memory for the life of the process.
+keys. Calendar events are stored in memory for the life of the process, while
+notes are persisted in the SQLite database (`notes` table) and scoped to the
+active `thread_id`: each conversation can only see and modify its own notes.
 Replace a tool body with a real client call when credentials are available — the
 signature and return shape can stay the same.
 
@@ -236,9 +239,11 @@ def word_count(text: str) -> str:
     return str(len(text.split()))
 ```
 
-Then append `word_count` to `ALL_TOOLS` in
+Then append `word_count` to `STATIC_TOOLS` in
 `src/agentic_chatbot/tools/registry.py`. `create_llm` and `ToolNode` pick it up
-automatically; no graph, service, or CLI changes are needed.
+automatically; no graph, service, or CLI changes are needed. Tools that need a
+repository (like the note tools) are built by a `create_*_tools()` factory and
+returned from `get_tools(repository)` instead.
 
 ### Example prompts
 
@@ -248,7 +253,7 @@ automatically; no graph, service, or CLI changes are needed.
 - "What time is 12:00 UTC in Asia/Dhaka?"
 - "How many business days between 2026-11-01 and 2026-12-15?"
 - "Save a note titled 'Grocery list' with milk, eggs, and spinach."
-- "Search my notes for 'spinach'."
+- "Search my notes for 'spinach'." (notes are private to the current thread)
 - "What's the weather in Dhaka?" / "Find a recipe for chicken curry."
 - "What are the public holidays in Bangladesh in 2027?"
 - "Track my package AB123456789."
@@ -289,15 +294,20 @@ are not overwritten.
 
 ## SQLite Persistence
 
-One SQLite database holds two independent concerns:
+One SQLite database holds three independent concerns:
 
 1. **Thread metadata** — the `threads` table (`thread_id`, `title`,
    `created_at`, `updated_at`), managed by `ThreadRepository`.
-2. **Conversation state** — LangGraph checkpoint tables created and managed by
+2. **Notes** — the `notes` table (`note_id`, `thread_id`, `title`, `content`,
+   `created_at`), managed by `NotesRepository`. Notes survive restarts and are
+   private to the conversation that created them.
+3. **Conversation state** — LangGraph checkpoint tables created and managed by
    `SqliteSaver.setup()`.
 
 Deleting a thread removes its checkpoints first, then its metadata. Deleting a
-thread while it is active creates a replacement conversation.
+thread while it is active creates a replacement conversation. Notes are kept
+until explicitly deleted with `delete_note`, but they are only visible from
+their own thread. Deleting a thread does not delete its notes.
 
 ## Running Tests
 
@@ -309,8 +319,9 @@ The suite uses temporary SQLite databases and fake graph/LLM implementations, so
 it never calls the OpenAI API. It covers configuration precedence, container
 wiring and schema creation, thread lifecycle and ordering, checkpoint cleanup on
 delete, streaming and title generation, tool execution and event emission, the
-individual tool implementations (calculators, utilities, notes, and mocks), CLI
-rendering, the interactive command loop, and package entry points.
+individual tool implementations (calculators, utilities, notes, and mocks),
+notes persistence across SQLite connections, CLI rendering, the interactive
+command loop, and package entry points.
 
 ```bash
 # Optional: byte-compile the package
@@ -351,8 +362,9 @@ streaming, tool calling, and SQLite persistence all run through the service laye
 under `src/agentic_chatbot/`. Thirty-six tools are registered in
 `src/agentic_chatbot/tools/` — local utilities plus mock implementations of
 common API-backed tools (weather, search, email, calendar, currency, …) that
-return `"mock": true` data until real credentials are configured. Add a tool to
-`registry.py` to expose it to the model. LangSmith tracing is available when
-enabled through `.env`. FastAPI is not part of the current runtime; it is the
-next planned milestone, and `ARCHITECTURE.md` documents how to wire it in
-without touching the services.
+return `"mock": true` data until real credentials are configured. Notes are
+stored in SQLite per conversation, so they survive restarts and stay private to
+each thread. Add a tool to `registry.py` to expose it to the model. LangSmith
+tracing is available when enabled through `.env`. FastAPI is not part of the
+current runtime; it is the next planned milestone, and `ARCHITECTURE.md`
+documents how to wire it in without touching the services.

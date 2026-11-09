@@ -3,6 +3,7 @@ import sqlite3
 import pytest
 
 from agentic_chatbot.container import ChatbotContainer
+from agentic_chatbot.repository import NotesRepository
 from agentic_chatbot.services.chat_service import ChatService
 from agentic_chatbot.services.thread_service import ThreadService
 from agentic_chatbot.services.title_service import TitleService
@@ -19,10 +20,17 @@ def test_container_creates_schema_and_services(container):
     names = _table_names(container.connection)
 
     assert "threads" in names
+    assert "notes" in names
     assert any(name.startswith("checkpoint") for name in names)
+    note_columns = {
+        row[1]
+        for row in container.connection.execute("PRAGMA table_info(notes)")
+    }
+    assert "thread_id" in note_columns
     assert isinstance(container.thread_service, ThreadService)
     assert isinstance(container.title_service, TitleService)
     assert isinstance(container.chat_service, ChatService)
+    assert isinstance(container.notes_repository, NotesRepository)
     tool_names = {tool.name for tool in container.tools}
     assert len(tool_names) == 36
     assert {

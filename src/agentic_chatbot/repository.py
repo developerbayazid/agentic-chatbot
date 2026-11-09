@@ -1,11 +1,12 @@
-"""SQLite access for thread metadata."""
+"""SQLite repositories for thread metadata and notes."""
 
 import sqlite3
 import uuid
 
-from agentic_chatbot.models import Thread
+from agentic_chatbot.models import Note, Thread
 
 _SELECT_COLUMNS = "thread_id, title, created_at, updated_at"
+_NOTE_COLUMNS = "note_id, thread_id, title, content, created_at"
 
 
 def _to_thread(row: sqlite3.Row) -> Thread:
@@ -83,3 +84,75 @@ class ThreadRepository:
             (thread_id,),
         )
         self._connection.commit()
+
+
+def _to_note(row: sqlite3.Row) -> Note:
+    return Note(
+        note_id=row["note_id"],
+        thread_id=row["thread_id"],
+        title=row["title"],
+        content=row["content"],
+        created_at=row["created_at"],
+    )
+
+
+class NotesRepository:
+    def __init__(self, connection: sqlite3.Connection):
+        self._connection = connection
+        self._cursor = connection.cursor()
+
+    def create(self, thread_id: str, title: str, content: str) -> Note:
+        note_id = str(uuid.uuid4())
+        self._cursor.execute(
+            """
+            INSERT INTO notes (note_id, thread_id, title, content)
+            VALUES (?, ?, ?, ?)
+            """,
+            (note_id, thread_id, title, content),
+        )
+        self._connection.commit()
+        return self.get(thread_id, note_id)
+
+    def get(self, thread_id: str, note_id: str) -> Note | None:
+        row = self._cursor.execute(
+            f"""
+            SELECT {_NOTE_COLUMNS}
+            FROM notes
+            WHERE thread_id = ? AND note_id = ?
+            """,
+            (thread_id, note_id),
+        ).fetchone()
+        return _to_note(row) if row else None
+
+    def list_all(self, thread_id: str) -> list[Note]:
+        rows = self._cursor.execute(
+            f"""
+            SELECT {_NOTE_COLUMNS}
+            FROM notes
+            WHERE thread_id = ?
+            ORDER BY created_at ASC, note_id ASC
+            """,
+            (thread_id,),
+        ).fetchall()
+        return [_to_note(row) for row in rows]
+
+    def search(self, thread_id: str, query: str) -> list[Note]:
+        pattern = f"%{query}%"
+        rows = self._cursor.execute(
+            f"""
+            SELECT {_NOTE_COLUMNS}
+            FROM notes
+            WHERE thread_id = ? AND (title LIKE ? OR content LIKE ?)
+            ORDER BY created_at ASC, note_id ASC
+            """,
+            (thread_id, pattern, pattern),
+        ).fetchall()
+        return [_to_note(row) for row in rows]
+
+    def delete(self, thread_id: str, note_id: str) -> bool:
+        self._cursor.execute(
+            "DELETE FROM notes WHERE thread_id = ? AND note_id = ?",
+            (thread_id, note_id),
+        )
+        self._connection.commit()
+        return self._cursor.rowcount > 0

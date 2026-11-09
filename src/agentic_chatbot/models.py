@@ -13,6 +13,15 @@ class Thread:
 
 
 @dataclass(frozen=True)
+class Note:
+    note_id: str
+    thread_id: str
+    title: str
+    content: str
+    created_at: str | None
+
+
+@dataclass(frozen=True)
 class TurnEvent:
     """A single event emitted while processing one conversation turn."""
 

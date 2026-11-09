@@ -16,7 +16,7 @@ from agentic_chatbot.config import Settings, get_settings
 from agentic_chatbot.database import create_connection, init_schema
 from agentic_chatbot.graph import build_chatbot
 from agentic_chatbot.llm import create_llm
-from agentic_chatbot.repository import ThreadRepository
+from agentic_chatbot.repository import NotesRepository, ThreadRepository
 from agentic_chatbot.services import ChatService, ThreadService, TitleService
 from agentic_chatbot.tools import get_tools
 
@@ -33,7 +33,8 @@ class ChatbotContainer:
         self.checkpointer = SqliteSaver(self.connection)
         self.checkpointer.setup()
 
-        self.tools = get_tools()
+        self.notes_repository = NotesRepository(self.connection)
+        self.tools = get_tools(self.notes_repository)
         self.llm = create_llm(settings)
         self.chat_llm = create_llm(settings, self.tools)
         self.chatbot: Any = build_chatbot(

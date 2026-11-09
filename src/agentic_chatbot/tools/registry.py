@@ -2,6 +2,7 @@
 
 from langchain_core.tools import BaseTool
 
+from agentic_chatbot.repository import NotesRepository
 from agentic_chatbot.tools.builtin import calculator, get_current_time
 from agentic_chatbot.tools.life import (
     calculate_age,
@@ -28,12 +29,7 @@ from agentic_chatbot.tools.mocks import (
     translate_text,
     web_search,
 )
-from agentic_chatbot.tools.notes import (
-    delete_note,
-    list_notes,
-    save_note,
-    search_notes,
-)
+from agentic_chatbot.tools.notes import create_note_tools
 from agentic_chatbot.tools.utilities import (
     base64_decode,
     base64_encode,
@@ -46,7 +42,7 @@ from agentic_chatbot.tools.utilities import (
     summarize_text,
 )
 
-ALL_TOOLS: list[BaseTool] = [
+STATIC_TOOLS: list[BaseTool] = [
     calculator,
     get_current_time,
     web_search,
@@ -76,15 +72,12 @@ ALL_TOOLS: list[BaseTool] = [
     days_between,
     convert_timezone,
     estimate_fuel_cost,
-    save_note,
-    list_notes,
-    search_notes,
-    delete_note,
     find_recipe,
     get_holidays,
     track_package,
 ]
 
 
-def get_tools() -> list[BaseTool]:
-    return list(ALL_TOOLS)
+def get_tools(notes_repository: NotesRepository) -> list[BaseTool]:
+    """Return every tool, including notes tools bound to the repository."""
+    return [*STATIC_TOOLS, *create_note_tools(notes_repository)]

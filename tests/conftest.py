@@ -1,7 +1,36 @@
+import os
+
 import pytest
 
 from agentic_chatbot.config import Settings
 from agentic_chatbot.container import ChatbotContainer
+
+LANGSMITH_ENV_KEYS = (
+    "LANGSMITH_TRACING",
+    "LANGSMITH_API_KEY",
+    "LANGSMITH_PROJECT",
+    "LANGSMITH_ENDPOINT",
+    "LANGCHAIN_TRACING_V2",
+    "LANGCHAIN_API_KEY",
+    "LANGCHAIN_PROJECT",
+    "LANGCHAIN_ENDPOINT",
+)
+
+
+@pytest.fixture(autouse=True)
+def isolate_langsmith_env():
+    saved = {key: os.environ.get(key) for key in LANGSMITH_ENV_KEYS}
+
+    for key in LANGSMITH_ENV_KEYS:
+        os.environ.pop(key, None)
+
+    yield
+
+    for key, value in saved.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
 
 
 @pytest.fixture

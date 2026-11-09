@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any
 
@@ -49,16 +50,36 @@ class ChatService:
         for chunk in self._chatbot.stream(
             {"messages": new_messages},
             config=config,
-            stream_mode="messages",
+            stream_mode=["messages", "updates"],
             version="v2",
         ):
-            if chunk["type"] != "messages":
-                continue
+            if chunk["type"] == "messages":
+                message_chunk, metadata = chunk["data"]
 
-            message_chunk, _metadata = chunk["data"]
+                node = metadata.get("langgraph_node")
 
-            if isinstance(message_chunk.content, str) and message_chunk.content:
-                yield TurnEvent(type="token", content=message_chunk.content)
+                if node not in (None, "chat_node"):
+                    continue
+
+                if isinstance(message_chunk.content, str) and message_chunk.content:
+                    yield TurnEvent(type="token", content=message_chunk.content)
+
+            elif chunk["type"] == "updates":
+                for node, update in chunk["data"].items():
+                    for message in (update or {}).get("messages", []):
+                        if node == "chat_node":
+                            for call in getattr(message, "tool_calls", None) or []:
+                                yield TurnEvent(
+                                    type="tool_call",
+                                    name=call["name"],
+                                    content=json.dumps(call.get("args", {})),
+                                )
+                        elif node == "tools":
+                            yield TurnEvent(
+                                type="tool_result",
+                                name=getattr(message, "name", None),
+                                content=str(message.content),
+                            )
 
         if is_first_message:
             title = self._title_service.generate_title(user_message)

@@ -16,6 +16,7 @@ class Thread:
 class TurnEvent:
     """A single event emitted while processing one conversation turn."""
 
-    type: Literal["token", "done"]
+    type: Literal["token", "tool_call", "tool_result", "done"]
     content: str = ""
     title: str | None = None
+    name: str | None = None

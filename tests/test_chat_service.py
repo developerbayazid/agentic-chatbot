@@ -1,5 +1,5 @@
 import pytest
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from agentic_chatbot.models import TurnEvent
 from agentic_chatbot.services.chat_service import ChatService
@@ -8,6 +8,7 @@ from tests.fakes import (
     FakeThreadService,
     FakeTitleService,
     message_chunk,
+    update_chunk,
 )
 
 
@@ -62,7 +63,7 @@ def test_first_turn_uses_expected_stream_arguments():
     assert chatbot.last_stream_kwargs["config"] == {
         "configurable": {"thread_id": "thread-1"}
     }
-    assert chatbot.last_stream_kwargs["stream_mode"] == "messages"
+    assert chatbot.last_stream_kwargs["stream_mode"] == ["messages", "updates"]
     assert chatbot.last_stream_kwargs["version"] == "v2"
 
 
@@ -85,10 +86,11 @@ def test_subsequent_turn_skips_system_message_and_title():
 def test_non_message_and_non_string_chunks_are_ignored():
     chatbot = FakeChatbot(
         chunks=[
-            {"type": "updates", "data": (object(), {})},
+            {"type": "updates", "data": {}},
             message_chunk(""),
             message_chunk(42),
             message_chunk("ok"),
+            message_chunk("tool output", node="tools"),
         ]
     )
     service = build_service(chatbot)
@@ -97,6 +99,48 @@ def test_non_message_and_non_string_chunks_are_ignored():
 
     assert [event.content for event in events if event.type == "token"] == ["ok"]
     assert events[-1].type == "done"
+
+
+def test_tool_call_and_result_events_are_emitted():
+    tool_call = {
+        "name": "calculator",
+        "args": {"expression": "2+2"},
+        "id": "call-1",
+    }
+    chatbot = FakeChatbot(
+        chunks=[
+            update_chunk("chat_node", [AIMessage(content="", tool_calls=[tool_call])]),
+            update_chunk(
+                "tools",
+                [
+                    ToolMessage(
+                        content="4",
+                        name="calculator",
+                        tool_call_id="call-1",
+                    )
+                ],
+            ),
+            message_chunk("The answer is 4."),
+        ]
+    )
+    service = build_service(chatbot)
+
+    events = list(service.stream_turn("thread-1", "what is 2+2?"))
+
+    assert (
+        TurnEvent(
+            type="tool_call",
+            name="calculator",
+            content='{"expression": "2+2"}',
+        )
+        in events
+    )
+    assert (
+        TurnEvent(type="tool_result", name="calculator", content="4") in events
+    )
+    assert [event.content for event in events if event.type == "token"] == [
+        "The answer is 4."
+    ]
 
 
 def test_get_messages_returns_checkpointed_state():

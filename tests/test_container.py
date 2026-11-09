@@ -23,6 +23,16 @@ def test_container_creates_schema_and_services(container):
     assert isinstance(container.thread_service, ThreadService)
     assert isinstance(container.title_service, TitleService)
     assert isinstance(container.chat_service, ChatService)
+    tool_names = {tool.name for tool in container.tools}
+    assert len(tool_names) == 36
+    assert {
+        "calculator",
+        "get_current_time",
+        "web_search",
+        "calculate_loan_payment",
+        "save_note",
+    } <= tool_names
+    assert container.chat_llm is not container.llm
 
 
 def test_container_thread_lifecycle(container):

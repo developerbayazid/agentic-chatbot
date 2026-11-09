@@ -5,10 +5,11 @@ LangChain, and LangGraph.
 
 The application is currently a modular, interactive **CLI**. It preserves
 thread-isolated conversations in SQLite through LangGraph's `SqliteSaver`,
-generates conversation titles automatically, and streams model responses token by
-token. Optional LangSmith tracing sends runs to LangSmith for debugging and
-monitoring. The code is split into presentation, service, graph, and persistence
-layers so a FastAPI backend can be added later without rewriting business logic.
+generates conversation titles automatically, streams model responses token by
+token, and supports tool calling through a LangGraph tool loop. Optional
+LangSmith tracing sends runs to LangSmith for debugging and monitoring. The code
+is split into presentation, service, graph, and persistence layers so a FastAPI
+backend can be added later without rewriting business logic.
 
 For the full design and migration plan, see [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
@@ -19,7 +20,7 @@ For the full design and migration plan, see [`ARCHITECTURE.md`](./ARCHITECTURE.m
 - Explore LangChain and LangGraph through practical implementation.
 - Preserve conversation history and thread isolation with SQLite.
 - Keep business logic framework-agnostic so it is reusable by a CLI or an API.
-- Prepare the architecture for tool calling, conditional routing, and agent nodes.
+- Provide a tool-calling loop with a single registry of local and mock-backed tools.
 - Add a FastAPI backend and frontend later without restructuring the core.
 
 ## Tech Stack
@@ -63,11 +64,18 @@ agentic-chatbot/
 │       ├── graph/
 │       │   ├── state.py         # ChatState
 │       │   ├── nodes.py         # chat node
-│       │   └── workflow.py      # compiled LangGraph
-│       └── services/
-│           ├── chat_service.py   # streaming turns + history
-│           ├── thread_service.py # thread lifecycle
-│           └── title_service.py  # automatic titles
+│       │   └── workflow.py      # compiled LangGraph (chat ⇄ tools)
+│       ├── services/
+│       │   ├── chat_service.py   # streaming turns + history
+│       │   ├── thread_service.py # thread lifecycle
+│       │   └── title_service.py  # automatic titles
+│       └── tools/
+│           ├── builtin.py        # calculator, get_current_time
+│           ├── utilities.py      # local helpers (hash, base64, units, ...)
+│           ├── life.py           # loan, tip, BMI, age, timezone, fuel
+│           ├── notes.py          # in-memory note taking
+│           ├── mocks.py          # mocked API tools (weather, search, ...)
+│           └── registry.py       # ALL_TOOLS / get_tools()
 │
 ├── tests/                       # Pytest suite (fakes + temporary SQLite)
 ├── notebooks/                   # Learning notebooks
@@ -85,11 +93,14 @@ cli.py  →  container.py  →  services  →  graph / repository  →  SQLite
 - **Presentation** (`cli.py`) — reads input and prints output only.
 - **Services** (`services/`) — chat orchestration, thread lifecycle, titles.
   Independent of any UI or HTTP framework.
-- **Graph** (`graph/`) — LangGraph state, nodes, and the compiled chatbot.
+- **Graph** (`graph/`) — LangGraph state, the chat node, the `ToolNode`, and the
+  compiled chatbot.
+- **Tools** (`tools/`) — `@tool` implementations registered in `registry.py` and
+  executed by LangGraph's `ToolNode`.
 - **Persistence** (`repository.py`, `database.py`) — thread metadata SQL.
 - **Checkpointer** — `SqliteSaver` stores conversation messages and graph state.
 - **Container** (`container.py`) — builds and owns the SQLite connection,
-  checkpointer, LLM, compiled graph, and services.
+  checkpointer, LLM, tool-bound LLM, compiled graph, and services.
 
 `ARCHITECTURE.md` explains each module, the request flow, the streaming event
 contract, and the exact steps to add FastAPI later.
@@ -185,16 +196,82 @@ agentic-chatbot = "agentic_chatbot:main"
 | `/exit`         | Exit the chatbot                          |
 | _anything else_ | Send a chat message                       |
 
+## Tools
+
+The tool-bound LLM receives every schema in `ALL_TOOLS`. When it emits tool
+calls, LangGraph's `ToolNode` executes them and routes back to the chat node for
+a final answer. Tool activity is printed as it happens:
+
+```text
+Assistant:
+[tool] get_weather({"location": "Dhaka", "unit": "celsius"})
+[tool result: get_weather] {"temperature": 27, ...}
+It is currently 27°C in Dhaka.
+```
+
+### Registered tools (36)
+
+| Category            | Module         | Tools                                                                                                                                                                                                 |
+| ------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Core                | `builtin.py`   | `calculator`, `get_current_time`                                                                                                                                                                      |
+| Local utilities     | `utilities.py` | `convert_units`, `generate_uuid`, `generate_password`, `hash_text`, `base64_encode`, `base64_decode`, `format_json`, `regex_search`, `summarize_text`                                                 |
+| Everyday life       | `life.py`      | `calculate_loan_payment`, `calculate_tip_split`, `calculate_bmi`, `calculate_age`, `days_between`, `convert_timezone`, `estimate_fuel_cost`                                                            |
+| Notes               | `notes.py`     | `save_note`, `list_notes`, `search_notes`, `delete_note`                                                                                                                                              |
+| Mock API services   | `mocks.py`     | `web_search`, `fetch_url`, `get_news`, `get_weather`, `get_stock_price`, `convert_currency`, `send_email`, `send_slack_message`, `create_calendar_event`, `list_calendar_events`, `translate_text`, `find_recipe`, `get_holidays`, `track_package` |
+
+All tools that need an external service (`mocks.py`) return simulated data and
+include `"mock": true` in their JSON. They make **no network calls** and need no
+keys. Calendar events and notes are stored in memory for the life of the process.
+Replace a tool body with a real client call when credentials are available — the
+signature and return shape can stay the same.
+
+### Adding a tool
+
+```python
+from langchain_core.tools import tool
+
+@tool
+def word_count(text: str) -> str:
+    """Count the words in a text."""  # the model uses this description
+    return str(len(text.split()))
+```
+
+Then append `word_count` to `ALL_TOOLS` in
+`src/agentic_chatbot/tools/registry.py`. `create_llm` and `ToolNode` pick it up
+automatically; no graph, service, or CLI changes are needed.
+
+### Example prompts
+
+- "What's the monthly payment on a $250,000 mortgage at 6.5% for 30 years?"
+- "Split a $120 dinner bill with an 18% tip across 4 people."
+- "My weight is 70 kg and I'm 1.75 m tall — what's my BMI?"
+- "What time is 12:00 UTC in Asia/Dhaka?"
+- "How many business days between 2026-11-01 and 2026-12-15?"
+- "Save a note titled 'Grocery list' with milk, eggs, and spinach."
+- "Search my notes for 'spinach'."
+- "What's the weather in Dhaka?" / "Find a recipe for chicken curry."
+- "What are the public holidays in Bangladesh in 2027?"
+- "Track my package AB123456789."
+- "Convert 250 USD to BDT."
+- "Create a calendar event 'Design review' on 2026-12-01 at 10:00 for 45 minutes."
+- "Search the web for LangGraph tool calling best practices."
+
 ## Streaming
 
 `ChatService.stream_turn()` yields transport-neutral events:
 
 - `TurnEvent(type="token", content="...")` for each streamed chunk.
+- `TurnEvent(type="tool_call", name=..., content="...")` when the model requests
+  a tool; `content` holds the JSON arguments.
+- `TurnEvent(type="tool_result", name=..., content="...")` when that tool
+  returns; `content` holds the result.
 - `TurnEvent(type="done", title=...)` when the turn is persisted; `title` is set
   only when a new title was generated on the first turn.
 
-The CLI prints these events directly. A future SSE endpoint can map the same
-events to `event: token` / `event: done` without changing the service.
+The CLI prints these events directly (`[tool]` / `[tool result: ...]` lines for
+tool activity). A future SSE endpoint can map the same events to `event: token` /
+`event: tool_call` / `event: tool_result` / `event: done` without changing the
+service.
 
 ## Observability with LangSmith
 
@@ -231,8 +308,9 @@ uv run pytest
 The suite uses temporary SQLite databases and fake graph/LLM implementations, so
 it never calls the OpenAI API. It covers configuration precedence, container
 wiring and schema creation, thread lifecycle and ordering, checkpoint cleanup on
-delete, streaming and title generation, CLI rendering, the interactive command
-loop, and package entry points.
+delete, streaming and title generation, tool execution and event emission, the
+individual tool implementations (calculators, utilities, notes, and mocks), CLI
+rendering, the interactive command loop, and package entry points.
 
 ```bash
 # Optional: byte-compile the package
@@ -259,8 +337,8 @@ uv run python -m compileall -q src/agentic_chatbot
 - [x] Modular, layered project structure
 - [x] Automated test suite
 - [x] LangSmith observability and tracing
+- [x] Tool calling and integration
 - [ ] FastAPI backend integration
-- [ ] Tool calling and integration
 - [ ] Agentic decision-making
 - [ ] Cross-thread memory management
 - [ ] Advanced agentic workflows
@@ -269,8 +347,12 @@ uv run python -m compileall -q src/agentic_chatbot
 ## Current Status
 
 The modular CLI is operational. Conversation threads, automatic titles, history,
-streaming, and SQLite persistence all run through the service layer under
-`src/agentic_chatbot/`. LangSmith tracing is available when enabled through
-`.env`. FastAPI is not part of the current runtime; it is the next planned
-milestone, and `ARCHITECTURE.md` documents how to wire it in without touching the
-services.
+streaming, tool calling, and SQLite persistence all run through the service layer
+under `src/agentic_chatbot/`. Thirty-six tools are registered in
+`src/agentic_chatbot/tools/` — local utilities plus mock implementations of
+common API-backed tools (weather, search, email, calendar, currency, …) that
+return `"mock": true` data until real credentials are configured. Add a tool to
+`registry.py` to expose it to the model. LangSmith tracing is available when
+enabled through `.env`. FastAPI is not part of the current runtime; it is the
+next planned milestone, and `ARCHITECTURE.md` documents how to wire it in
+without touching the services.

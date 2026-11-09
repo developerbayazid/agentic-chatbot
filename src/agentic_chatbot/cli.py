@@ -85,6 +85,14 @@ def process_message(chat_service: ChatService, thread_id: str, user_message: str
         for event in chat_service.stream_turn(thread_id, user_message):
             if event.type == "token":
                 print(event.content, end="", flush=True)
+            elif event.type == "tool_call":
+                print(f"\n[tool] {event.name}({event.content})", end="", flush=True)
+            elif event.type == "tool_result":
+                snippet = event.content
+                if len(snippet) > 200:
+                    snippet = snippet[:200] + "..."
+                print(f"\n[tool result: {event.name}] {snippet}", flush=True)
+                print("\nAssistant: ", end="", flush=True)
             elif event.type == "done":
                 title = event.title
 

@@ -3,8 +3,18 @@
 from types import SimpleNamespace
 
 
-def message_chunk(content):
-    return {"type": "messages", "data": (SimpleNamespace(content=content), {})}
+def message_chunk(content, node="chat_node"):
+    return {
+        "type": "messages",
+        "data": (
+            SimpleNamespace(content=content),
+            {"langgraph_node": node},
+        ),
+    }
+
+
+def update_chunk(node, messages):
+    return {"type": "updates", "data": {node: {"messages": messages}}}
 
 
 class FakeChatbot:

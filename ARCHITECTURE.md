@@ -17,6 +17,7 @@ rewrite.
 3. Keep persistence (SQLite + LangGraph checkpoints) behind a small repository.
 4. Make the graph definition independent of how it is invoked.
 5. Make a future FastAPI layer a thin adapter over the service layer.
+6. Route tool calls through a standard LangGraph loop backed by one registry.
 
 The guiding rule: **the CLI and a future API are interchangeable presentations
 of the same services.** No business logic lives in `cli.py`, and no HTTP or
@@ -54,13 +55,22 @@ agentic-chatbot/
         │   ├── __init__.py
         │   ├── state.py         # ChatState (messages + add_messages reducer)
         │   ├── nodes.py         # create_chat_node(llm)
-        │   └── workflow.py      # build_chatbot(llm, checkpointer)
+        │   └── workflow.py      # build_chatbot(llm, checkpointer, tools)
         │
-        └── services/
+        ├── services/
+        │   ├── __init__.py
+        │   ├── thread_service.py  # Thread lifecycle (CRUD + checkpoint cleanup)
+        │   ├── title_service.py   # Automatic title generation
+        │   └── chat_service.py    # Streaming turns, history, state access
+        │
+        └── tools/
             ├── __init__.py
-            ├── thread_service.py  # Thread lifecycle (CRUD + checkpoint cleanup)
-            ├── title_service.py   # Automatic title generation
-            └── chat_service.py    # Streaming turns, history, state access
+            ├── builtin.py         # calculator, get_current_time
+            ├── utilities.py       # local helpers (hash, base64, units, ...)
+            ├── life.py            # loan, tip, BMI, age, timezone, fuel
+            ├── notes.py           # in-memory note taking
+            ├── mocks.py           # simulated API tools (weather, search, ...)
+            └── registry.py        # ALL_TOOLS / get_tools()
 ```
 
 ---
@@ -88,9 +98,11 @@ agentic-chatbot/
 ┌───────────────▼──────────────┐  ┌─────────────▼──────────────┐
 │ Persistence                  │  │ Graph orchestration        │
 │   ThreadRepository           │  │   StateGraph(ChatState)    │
-│   database.py                │  │   START → chat_node → END  │
-│   SqliteSaver (checkpoints)  │  │   compiled w/ checkpointer │
-│   models.py (Thread, Event)  │  │   llm.py (ChatOpenAI)      │
+│   database.py                │  │   START → chat_node        │
+│   SqliteSaver (checkpoints)  │  │        ⇄ tools → END       │
+│   models.py (Thread, Event)  │  │   compiled w/ checkpointer │
+│                              │  │   llm.py (ChatOpenAI)      │
+│                              │  │   tools/registry.py        │
 └──────────────────────────────┘  └────────────────────────────┘
 
         container.py constructs and connects every box above.
@@ -99,10 +111,11 @@ agentic-chatbot/
 ### Dependency direction
 
 - `cli` → `container` → (`config`, `database`, `repository`, `graph`, `llm`,
-  `services`)
+  `services`, `tools`)
 - `services.chat` → compiled graph + `ThreadService` + `TitleService`
 - `services.thread` → `ThreadRepository` + `SqliteSaver`
-- `graph.workflow` → `graph.nodes` → `graph.state`
+- `graph.workflow` → `graph.nodes` → `graph.state` (+ LangGraph `ToolNode`)
+- `tools.registry` → `tools.builtin`
 - `repository` → `models` + `sqlite3`
 
 Nothing imports the CLI, and `graph/` never imports `services/`. That one-way
@@ -125,7 +138,11 @@ class ChatbotContainer:
         self.checkpointer.setup()                                    # 4
 
         self.llm = create_llm(settings)                              # 5
-        self.chatbot = build_chatbot(self.llm, self.checkpointer)    # 6
+        self.tools = get_tools()                                     # 5b
+        self.chat_llm = create_llm(settings, self.tools)             # 5c
+        self.chatbot = build_chatbot(                               # 6
+            self.chat_llm, self.checkpointer, self.tools
+        )
 
         self.thread_repository = ThreadRepository(self.connection)   # 7
         self.thread_service = ThreadService(
@@ -148,8 +165,10 @@ class ChatbotContainer:
 2. Create the `threads` table if missing.
 3. Wrap the same connection in LangGraph's `SqliteSaver`.
 4. Let the checkpointer create/upgrade its own tables.
-5. Build the chat model from settings.
-6. Compile the graph exactly once.
+5. Build the untooled chat model from settings (used for title generation).
+   5b. Load the tool registry.
+   5c. Build a tool-bound copy of the model (`bind_tools`).
+6. Compile the graph exactly once, passing the bound model and the tools.
 7. Wire the repository and services.
 
 `build_container(settings=None)` is the public factory. The CLI uses it today; a
@@ -179,9 +198,11 @@ override both the environment and `.env`, which is what tests do.
 
 ### `llm.py`
 
-`create_llm(settings)` returns a `ChatOpenAI` configured with the model,
-temperature, and API key. Passing `api_key=None` lets the OpenAI SDK resolve
-`OPENAI_API_KEY` from the process environment.
+`create_llm(settings, tools=None)` returns a `ChatOpenAI` configured with the
+model, temperature, and API key. Passing `api_key=None` lets the OpenAI SDK
+resolve `OPENAI_API_KEY` from the process environment. When `tools` is provided,
+the model is wrapped with `bind_tools` so it can emit tool calls; without tools
+the raw `ChatOpenAI` is returned (used for title generation).
 
 ### `database.py`
 
@@ -197,6 +218,9 @@ temperature, and API key. Passing `api_key=None` lets the OpenAI SDK resolve
   response schemas).
 - `TurnEvent` — frozen dataclass emitted by `ChatService.stream_turn`:
   - `type="token"`, `content="..."` for each streamed chunk
+  - `type="tool_call"`, `name=...`, `content=<JSON args>` when the model requests
+    a tool
+  - `type="tool_result"`, `name=...`, `content="..."` when a tool returns
   - `type="done"`, `title=...` (or `None`) once the turn is persisted
 
 `TurnEvent` deliberately contains no terminal/HTTP concepts, so it can be mapped
@@ -252,9 +276,14 @@ The heart of the conversation logic.
   1. Read existing messages; detect whether this is the **first** turn.
   2. Build input messages: `[SystemMessage]` on the first turn, then
      `HumanMessage(user_message)`.
-  3. Call `chatbot.stream(..., stream_mode="messages", version="v2")`.
-  4. For each `"messages"` chunk whose content is a non-empty string, yield a
-     `token` event.
+  3. Call `chatbot.stream(..., stream_mode=["messages", "updates"], version="v2")`.
+  4. For each `"messages"` chunk from `chat_node` whose content is a non-empty
+     string, yield a `token` event. Chunks from other nodes (notably the `tools`
+     node's `ToolMessage` results) are skipped so raw tool output never leaks
+     into the answer stream.
+  4b. For `"updates"` chunks: an `AIMessage` with `tool_calls` from `chat_node`
+     yields `tool_call` events (arguments as JSON); a `ToolMessage` from `tools`
+     yields `tool_result` events.
   5. After streaming, on the first turn generate and save the title, then yield
      `done` with that title; otherwise touch the thread and yield `done` with
      `title=None`.
@@ -270,12 +299,67 @@ how to expose events.
 - `nodes.py` — `create_chat_node(llm)` returns a node that invokes the model on
   `state["messages"]` and returns `{"messages": [response]}`. Injecting the LLM
   keeps the node testable.
-- `workflow.py` — `build_chatbot(llm, checkpointer)` wires
-  `START → chat_node → END`, sets the state schema, and compiles with the
-  checkpointer. The result is the compiled graph used by `ChatService`.
+- `workflow.py` — `build_chatbot(llm, checkpointer, tools=None)` wires
+  `START → chat_node`, then:
+  - with tools: a `ToolNode` from `langgraph.prebuilt` plus conditional routing
+    (`tools_condition`) — `chat_node → tools → chat_node` when the model emits
+    tool calls, otherwise `chat_node → END`;
+  - without tools: `chat_node → END` exactly as before.
 
-Adding a node later (tool call, router, memory) means adding it in `nodes.py` and
-the edge in `workflow.py`; no service or CLI code changes.
+  The result is the compiled graph used by `ChatService`. The default recursion
+  limit bounds tool loops.
+
+Adding a node later (router, memory) means adding it in `nodes.py` and the edge
+in `workflow.py`; no service or CLI code changes.
+
+### `tools/`
+
+All tools are `@tool`-decorated functions. Tools that need an external service
+return clear `"Error: ..."` strings instead of raising, so the model can recover.
+
+- `builtin.py` — core tools:
+  - `calculator(expression)` — safe arithmetic (AST whitelist, no `eval`).
+  - `get_current_time(timezone=None)` — ISO 8601 timestamp, optional IANA zone.
+- `utilities.py` — local, key-free helpers: `generate_uuid`,
+  `generate_password`, `hash_text`, `base64_encode`, `base64_decode`,
+  `format_json`, `regex_search`, `summarize_text` (extractive), `convert_units`.
+- `life.py` — fully local everyday calculators: `calculate_loan_payment`,
+  `calculate_tip_split`, `calculate_bmi`, `calculate_age`, `days_between`,
+  `convert_timezone` (via `zoneinfo`), `estimate_fuel_cost`.
+- `notes.py` — in-memory note taking: `save_note`, `list_notes`,
+  `search_notes`, `delete_note`. Notes live for the process lifetime; swap
+  `_NOTES` for a persistent store when needed.
+- `mocks.py` — simulated implementations of common API-backed tools:
+  `web_search`, `fetch_url`, `get_news`, `get_weather`, `get_stock_price`,
+  `convert_currency`, `send_email`, `send_slack_message`,
+  `create_calendar_event`, `list_calendar_events`, `translate_text`,
+  `find_recipe`, `get_holidays`, `track_package`. Each response carries
+  `"mock": true`; calendar events live in memory for the process lifetime.
+  Replace a tool body with a real client call when its credentials are
+  available — signatures and return shapes can stay the same.
+- `registry.py` — `ALL_TOOLS` (36 tools) and `get_tools()`, the single place to
+  register a new tool. `container.py` passes the result to both `create_llm` and
+  `build_chatbot`.
+
+**Adding a tool** is additive:
+
+```python
+from langchain_core.tools import tool
+
+@tool
+def word_count(text: str) -> str:
+    """Count the words in a text."""  # shown to the model
+    return str(len(text.split()))
+```
+
+Append the function to `ALL_TOOLS` in `registry.py`. Nothing else changes:
+`create_llm` binds the new schema and `ToolNode` can execute it. Prefer
+returning a plain string or JSON string; return `"Error: ..."` for bad input so
+the model can correct itself instead of the run failing.
+
+Mock tools are intentionally honest: JSON responses include `"mock": true`, no
+network calls are made, and the modeled state (notes, calendar) lives in module
+memory for the process lifetime.
 
 ### `cli.py`
 
@@ -286,8 +370,9 @@ Presentation only:
 - On startup it restores the most recently updated thread, or creates one.
 - Slash commands: `/new`, `/threads`, `/switch`, `/history`, `/rename`,
   `/delete`, `/help`, `/exit`.
-- `process_message()` prints `Assistant: `, streams token events, then prints
-  the generated title if the `done` event carries one.
+- `process_message()` prints `Assistant: `, streams token events, renders
+  `[tool]` / `[tool result: ...]` lines for tool activity (results truncated to
+  200 chars), then prints the generated title if the `done` event carries one.
 - Stream/LLM exceptions are caught and printed; `KeyboardInterrupt` and any
   other loop-level exceptions are handled without exiting.
 
@@ -315,7 +400,10 @@ ChatService.stream_turn(thread_id, text)
       ├─ build [SystemMessage?] + HumanMessage
       │
       ├─ chatbot.stream(...)  ──► LangGraph ──► ChatOpenAI
-      │        per chunk ──► yield TurnEvent(token, content)
+      │        chat_node tokens ──► yield TurnEvent(token, content)
+      │        chat_node updates ─► yield TurnEvent(tool_call, name, args)
+      │        tools updates ─────► yield TurnEvent(tool_result, name, result)
+      │        (tools node loops back to chat_node)
       │
       ├─ if first turn: TitleService.generate_title(text)
       │        └─ ThreadService.rename_thread(thread_id, title)
@@ -326,6 +414,33 @@ ChatService.stream_turn(thread_id, text)
       ▼
 CLI prints tokens; prints title when done
 ```
+
+### Tool-calling loop
+
+```text
+chat_node (tool-bound LLM)
+      │
+      ├─ no tool_calls ──────────────────────────────► END
+      │
+      └─ tool_calls present
+             │ tools_condition → "tools"
+             ▼
+        ToolNode executes each call
+             ├─ calculator, get_current_time        (local)
+             ├─ utilities / life / notes            (local)
+             └─ mocks                               (simulated data)
+             │
+             ▼
+        ToolMessage(s) appended to state
+             │
+             └────────────► chat_node (again)
+
+Stream:  messages mode  → chat_node answer tokens
+         updates  mode  → AIMessage.tool_calls → tool_call events
+                        → ToolMessage           → tool_result events
+```
+
+LangGraph's default `recursion_limit` (25) caps the number of round trips.
 
 ### Creating / switching / deleting threads
 
@@ -422,16 +537,24 @@ Alternatively, `uv run python -m agentic_chatbot` enters through
 
 `ChatService.stream_turn` emits a small, transport-neutral contract:
 
-| Event   | Fields               | Meaning                                     |
-| ------- | -------------------- | ------------------------------------------- |
-| `token` | `content: str`       | Incremental assistant text                  |
-| `done`  | `title: str \| None` | Turn finished and persisted; title if new   |
+| Event         | Fields                                  | Meaning                                      |
+| ------------- | --------------------------------------- | -------------------------------------------- |
+| `token`       | `content: str`                          | Incremental assistant text                   |
+| `tool_call`   | `name: str`, `content: str` (JSON args) | The model requested a tool                   |
+| `tool_result` | `name: str`, `content: str`             | Tool finished; content is its return value   |
+| `done`        | `title: str \| None`                    | Turn finished and persisted; title if new    |
 
 The CLI maps this to `print()`. A future SSE endpoint maps it to:
 
 ```text
 event: token
 data: {"content": "Hello"}
+
+event: tool_call
+data: {"name": "calculator", "content": "{\"expression\": \"2+2\"}"}
+
+event: tool_result
+data: {"name": "calculator", "content": "4"}
 
 event: done
 data: {"title": "Simple Greetings"}
@@ -501,8 +624,11 @@ where that change belongs.
 
 - **New graph node** — add a factory in `graph/nodes.py`, wire the edge in
   `graph/workflow.py`. `ChatService` is unchanged.
-- **Tool calling / agents** — bind tools to the LLM in `llm.py`, add a tool node,
-  and route conditionally in `workflow.py`.
+- **New tool** — add a `@tool` function and append it to `ALL_TOOLS` in
+  `tools/registry.py`. `create_llm` binding and `ToolNode` pick it up
+  automatically; no graph or service changes.
+- **Agents / more routing** — add nodes in `graph/nodes.py` and edges in
+  `graph/workflow.py`; `ChatService` is unchanged.
 - **Different database** — change `database.py` and `repository.py`; services and
   CLI stay the same.
 - **Different model/provider** — change `llm.py` only.
@@ -528,6 +654,18 @@ where that change belongs.
 6. **Console script name uses a hyphen** — run `uv run agentic-chatbot`, not
    `agentic_chatbot`. The module entry point is `uv run python -m agentic_chatbot`
    (no `.py`).
+7. **Tool loops are bounded by LangGraph's recursion limit** (default 25). A
+   model that keeps requesting tools raises `GraphRecursionError`, which the CLI
+   reports like any other stream error.
+8. **Mock tools return simulated data** — `tools/mocks.py` never calls the
+   network and marks responses with `"mock": true`. Do not present their output
+   as live data; replace each body with a real client as keys are added.
+9. **Notes and calendar state are in-memory** — `tools/notes.py` and the mock
+   calendar reset when the process exits. Move them to SQLite or files for
+   durability.
+10. **Every tool schema is sent to the model on every call** — 36 tools increase
+    prompt size and can slow tool selection. Trim `ALL_TOOLS` (or gate tools by
+    config) if latency or cost matters.
 
 ---
 
@@ -556,5 +694,19 @@ Tests use `tmp_path` SQLite databases plus fake graph, LLM, title, thread, and
 checkpointer doubles (`tests/fakes.py`), so no OpenAI calls are made. Coverage
 includes configuration precedence, container wiring and schema creation, thread
 service CRUD and ordering, checkpoint cleanup on delete, `ChatService`
-streaming/title behavior, CLI output and the interactive command loop, and
-package entry points.
+streaming/title behavior and tool-event emission, the real `ToolNode` loop, every
+tool implementation (core, utilities, life, notes, mocks), CLI output and the
+interactive command loop, and package entry points.
+
+Manual tool checks in the CLI:
+
+```text
+What's the monthly payment on a 250000 loan at 6% for 30 years?
+Convert 100 USD to EUR.
+Save a note titled "groceries" with milk and eggs.
+What time is 12:00 UTC in Asia/Dhaka?
+What's the weather in Dhaka?
+```
+
+Expect a `[tool]` line, a `[tool result: ...]` line, then the answer. Mock
+results include `"mock": true`.

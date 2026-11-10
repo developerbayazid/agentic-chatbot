@@ -20,7 +20,7 @@ rewrite.
 6. Route tool calls through a standard LangGraph loop backed by one registry.
 
 The guiding rule: **the CLI and a future API are interchangeable presentations
-of the same services.** No business logic lives in `cli.py`, and no HTTP or
+of the same services.** No business logic lives in `cli/`, and no HTTP or
 terminal concepts leak into `services/`.
 
 ---
@@ -42,8 +42,20 @@ agentic-chatbot/
     └── agentic_chatbot/
         ├── __init__.py          # Lazy export of main() for the console script
         ├── __main__.py          # python -m agentic_chatbot entry point
-        ├── cli.py               # Terminal presentation + command loop
         ├── container.py         # Composition root: builds all shared resources
+        │
+        ├── cli/                 # Terminal presentation (Rich + prompt_toolkit)
+        │   ├── __init__.py      # exports: main, run_session, dispatch, COMMANDS
+        │   ├── theme.py         # design system: emerald palette + surfaces
+        │   ├── glyphs.py        # terminal-safe symbol fallback
+        │   ├── background.py    # emerald grid + neural-node decoration
+        │   ├── console.py       # Rich rendering (hero, messages, commands)
+        │   ├── chat.py          # streaming turns + tool timing + status
+        │   ├── commands.py      # command table, handlers, dispatch
+        │   ├── registry.py      # Command record, lookup, fuzzy matching
+        │   ├── session.py       # per-run state shared by handlers
+        │   ├── input.py         # framed prompt + prompt_toolkit completion
+        │   └── app.py           # interactive loop + main()
         │
         ├── config.py            # pydantic-settings Settings (env + .env)
         ├── llm.py               # ChatOpenAI factory
@@ -80,10 +92,16 @@ agentic-chatbot/
 ```text
 ┌──────────────────────────────────────────────────────────────┐
 │ Presentation layer                                           │
-│   cli.py                                                     │
-│   - reads input(), prints to terminal                        │
-│   - parses slash commands                                    │
-│   - renders TurnEvent streams                                │
+│   cli/                                                       │
+│   - theme.py       emerald design system: palette + surfaces │
+│   - background.py  emerald grid + neural-node decoration     │
+│   - glyphs.py      terminal-safe symbol fallback             │
+│   - input.py       framed prompt + completion, history, keys │
+│   - commands.py    one command table: handlers + dispatch    │
+│   - console.py     Rich rendering: hero, messages, commands  │
+│   - chat.py        streaming TurnEvents -> Rich output       │
+│   - session.py     per-run state (thread id, console, ask)   │
+│   - app.py         the loop + main()                         │
 │   (future: FastAPI routers do the same job)                  │
 └───────────────────────────┬──────────────────────────────────┘
                             │ calls
@@ -120,6 +138,14 @@ agentic-chatbot/
 
 Nothing imports the CLI, and `graph/` never imports `services/`. That one-way
 flow is what keeps the business logic reusable.
+
+Within `cli/`, the imports also point one way:
+`app → {commands, chat, input, session}`, `commands → {registry, console, session}`,
+`chat → {console}`, `input → {theme, glyphs, registry, session}`,
+`console → {theme, background, glyphs, models}`, `background → {theme, glyphs}`.
+`registry` has no dependencies beyond the standard library (and `theme` only on
+Rich), which is why command lookup, fuzzy matching, and the palette can be
+unit-tested in isolation.
 
 ---
 
@@ -388,23 +414,72 @@ Mock tools are intentionally honest: JSON responses include `"mock": true`, no
 network calls are made, and the modeled state (calendar) lives in module memory
 for the process lifetime. Notes are the exception: they are durable SQLite rows.
 
-### `cli.py`
+### `cli/`
 
-Presentation only:
+Presentation only. The package turns `TurnEvent`s and service calls into a
+polished terminal experience, and nothing else.
 
-- `main()` builds the container, runs the loop, and always closes the connection
-  in a `finally` block.
-- On startup it restores the most recently updated thread, or creates one.
-- Slash commands: `/new`, `/threads`, `/switch`, `/history`, `/rename`,
-  `/delete`, `/help`, `/exit`.
-- `process_message()` prints `Assistant: `, streams token events, renders
-  `[tool]` / `[tool result: ...]` lines for tool activity (results truncated to
-  200 chars), then prints the generated title if the `done` event carries one.
-- Stream/LLM exceptions are caught and printed; `KeyboardInterrupt` and any
-  other loop-level exceptions are handled without exiting.
+| Module        | Responsibility |
+| ------------- | -------------- |
+| `registry.py` | `Command` and `Completion` dataclasses, `normalize`, `resolve`, `grouped`, `suggest` (prefix, then fuzzy), `similar_commands` (difflib), `split_input`. No I/O, no rendering, no service imports — pure and directly unit-tested. |
+| `commands.py` | `COMMANDS: list[Command]` — the single source of truth — plus every handler and `dispatch(session, text) -> bool`. `dispatch` returns `False` for non-slash input so the caller forwards it to the LLM, and `True` when it handled the input (including reporting an unknown command, which is never forwarded). |
+| `theme.py` | The design system: the emerald palette (brand, type ramp, status colours), background/surface colours, the resolved `Palette` with named style roles, and the shared `RICH_THEME`. Every colour lives here; no component hardcodes one. |
+| `background.py` | The emerald grid + neural-node decoration: `grid_lines` (a sparse lattice with occasional emerald nodes), `stamp_center`/`banner` (overlay a clean, centred lockup over the grid), and `grid_unicode_ok` for the Unicode→ASCII fallback. Static text — no animation, no per-token redraw cost. |
+| `console.py` | Rich rendering in the emerald-grid design: the framed welcome hero (`show_welcome` — grid backdrop, brand lockup, live status bullets, quick-start shortcuts), `show_status_banner`, `show_help`, `show_command_help`, `show_threads`, `show_history`, `user_message` (`YOU`), `assistant_header` (`BAYAZID AI`), `stream_token`, `markdown_block`, `tool_call` (`● Executing tool: …`), `tool_result` (`✓ Completed · 0.3s` / `✗ Failed`), `error`, `notice`/`success`/`warning`, and the `StatusSnapshot` record. All layout lives here; colours come from `theme.py`. |
+| `chat.py` | `process_message` maps `TurnEvent`s to renderer calls and measures real tool elapsed time; `build_status` collects display-safe runtime facts. The `_Response` buffer decides between live streaming and Markdown rendering and closes a streamed line before tool activity. |
+| `session.py` | `ChatSession` — mutable per-run state: container, console, `current_thread_id`, `running`, and an injectable `ask` used by handlers that need an argument. Exposes `thread_service`/`chat_service`/`settings` convenience properties and `process()`. |
+| `input.py` | `CommandCompleter` (command names, then per-command argument completions), `framed_message` (the width-adaptive top-rule + left-rail composer), `build_prompt_session` (framed message + `bottom_toolbar` status bar), `read_input`, `make_ask`, and `PlainPrompt` for terminals where prompt_toolkit cannot attach. |
+| `glyphs.py` | `g(name)` returns a Unicode or ASCII symbol depending on the stdout encoding, preventing `UnicodeEncodeError` on legacy code pages. |
+| `app.py` | `run_session(container, console, prompt_session=None)` and `main()`. Owns the loop, resumes the most recent thread, and always closes the connection in a `finally` block. |
 
-`show_history` maps LangChain message types (`human`, `ai`, `system`) to display
-roles and skips system messages.
+**Command definition.** A command carries its name, description, category,
+usage, example, behaviour, argument description, handler, and optional
+`arg_completer`:
+
+```python
+@dataclass(frozen=True)
+class Command:
+    name: str
+    description: str
+    category: str
+    usage: str
+    example: str
+    behavior: str
+    arguments: str
+    handler: Callable[[ChatSession, str], None]
+    arg_completer: Callable[[ChatSession, str], list[Completion]] | None = None
+```
+
+Two categories exist — `General` (`/help`, `/clear`, `/status`, `/version`,
+`/exit`) and `Conversation` (`/new`, `/threads`, `/switch`, `/history`,
+`/rename`, `/delete`) — and `CATEGORY_ORDER` fixes their display order.
+
+**Dispatch.** Slash input never reaches the model. `dispatch` looks the name up
+with `resolve` (accepting `help` and `/help` alike); an unknown name triggers
+`similar_commands` and an inline "Did you mean?" warning. Only
+non-slash text returns `False` and becomes a chat turn.
+
+**Argument completion.** `/switch` and `/delete` declare `arg_completer=_thread_ids`,
+which reads `ThreadService.list_threads()` at completion time and returns
+`Completion(thread_id, title)` pairs. Thread IDs therefore always come from the
+database and cannot drift from the real state.
+
+**Streaming and Markdown.** `_Response` buffers the first
+`min(newline, 80 chars)` of each response. If that prefix starts a Markdown block
+(fence, heading, quote, table, bullet, numbered list, rule) the rest is buffered
+and rendered with `rich.markdown.Markdown`; otherwise the buffer is flushed and
+tokens stream live. Tool events flush the buffer first so ordering reads
+naturally, and an error flushes rather than discards partial output.
+
+**Terminal safety.** `build_prompt_session` returns `None` when prompt_toolkit
+cannot obtain a console (piped input, CI, some legacy shells); `app.py` then
+substitutes `PlainPrompt`, which reads `input()`. The command set, dispatch, and
+rendering are identical on both paths.
+
+**Error handling.** `process_message` catches stream/LLM failures, logs the
+traceback at DEBUG, and shows a concise inline error. `run_session` catches
+`KeyboardInterrupt` per turn and any other exception per iteration, so a
+recoverable error never ends the session. `main()` always closes the connection.
 
 ---
 
@@ -416,8 +491,20 @@ roles and skips system messages.
 User types text
       │
       ▼
-cli.process_message(chat_service, thread_id, text)
+app.run_session → commands.dispatch(session, text)
       │
+      ├─ starts with "/" ? ── yes ─► resolve in COMMANDS
+      │                              ├─ found  → handler(session, argument)
+      │                              └─ missing → "Did you mean?" warning  (stop)
+      │
+      └─ no
+      ▼
+ChatSession.process(text)          (never reached for slash input)
+      │
+      ▼
+cli.chat.process_message(console, chat_service, thread_id, text)
+      │
+      ├─ console.user_message(...) / assistant_header(...)
       ▼
 ChatService.stream_turn(thread_id, text)
       │
@@ -439,7 +526,11 @@ ChatService.stream_turn(thread_id, text)
       └─ yield TurnEvent(done, title=title|None)
       │
       ▼
-CLI prints tokens; prints title when done
+cli.chat._Response routes each token:
+      ├─ buffered prefix starts a Markdown block → render with Rich Markdown
+      └─ otherwise                              → stream token, live
+tool_call / tool_result events flush the buffer, then render a status line
+done → close the message; print the new title if this was the first turn
 ```
 
 ### Tool-calling loop
@@ -474,11 +565,15 @@ LangGraph's default `recursion_limit` (25) caps the number of round trips.
 
 ```text
 /new      → ThreadService.create_thread() → INSERT into threads
+            → session.current_thread_id updated
 /threads  → ThreadService.list_threads()   → SELECT ordered by updated_at
+            → Rich list, active thread marked
 /switch   → thread_exists? → set current_thread_id (no DB write)
+            argument comes from the command line or an ask() prompt
+            with tab completion over real thread IDs
 /history  → ChatService.get_messages()     → checkpointer state
 /rename   → ThreadService.rename_thread()  → UPDATE title, updated_at
-/delete   → ThreadService.delete_thread()
+/delete   → confirm via ask(); ThreadService.delete_thread()
               ├─ checkpointer.delete_thread(id)
               └─ repository.delete(id)
             if it was active → create a replacement thread
@@ -555,9 +650,11 @@ build_container()
       ├─ compiled LangGraph (once)
       └─ repository + services
       │
-_run_interactive()
+run_session()
       ├─ restore latest thread or create one
-      ├─ input loop (commands / chat)
+      ├─ console.show_welcome() — emerald-grid framed hero + live status
+      ├─ build_prompt_session() (or PlainPrompt fallback)
+      ├─ input loop → dispatch() for "/", process_message() otherwise
       └─ exit
       │
 container.close()   # finally: closes SQLite connection
@@ -576,8 +673,8 @@ agentic-chatbot = "agentic_chatbot:main"
 ```
 
 1. `uv run agentic-chatbot` → `src/agentic_chatbot/__init__.py:main()`
-2. → `cli.main()` → `build_container()`
-3. → `_run_interactive()` → input loop
+2. → `cli/app.py:main()` → `build_container(settings)`
+3. → `run_session()` → input loop
 
 Alternatively, `uv run python -m agentic_chatbot` enters through
 `__main__.py`, which calls the same `cli.main()`.
@@ -595,7 +692,10 @@ Alternatively, `uv run python -m agentic_chatbot` enters through
 | `tool_result` | `name: str`, `content: str`             | Tool finished; content is its return value   |
 | `done`        | `title: str \| None`                    | Turn finished and persisted; title if new    |
 
-The CLI maps this to `print()`. A future SSE endpoint maps it to:
+The CLI maps these to Rich output through `cli/chat.py`: `token` streams live (or
+buffers into a Markdown render), `tool_call`/`tool_result` become status lines,
+and `done` closes the message and may print a new title. A future SSE endpoint
+maps the same events to:
 
 ```text
 event: token
@@ -612,7 +712,8 @@ data: {"title": "Simple Greetings"}
 ```
 
 Errors are **not** converted into events by the service; the caller decides
-(CLI prints them, an API would emit `event: error` and a 4xx/5xx as appropriate).
+(the CLI shows an inline error, an API would emit `event: error` and a 4xx/5xx as
+appropriate).
 
 ---
 
@@ -679,6 +780,11 @@ where that change belongs.
   `tools/registry.py` (or build it in a `create_*_tools(repository)` factory for
   stateful tools). `create_llm` binding and `ToolNode` pick it up automatically;
   no graph or service changes.
+- **New command** — append a `Command` to `COMMANDS` in `cli/commands.py` with a
+  handler and, optionally, an `arg_completer`. Execution, the `/` menu, Tab
+  completion, `/help`, and typo suggestions all update automatically.
+- **New output style** — add a function in `cli/console.py`; handlers and
+  `cli/chat.py` call it, so styling stays in one module.
 - **Agents / more routing** — add nodes in `graph/nodes.py` and edges in
   `graph/workflow.py`; `ChatService` is unchanged.
 - **Different database** — change `database.py` and `repository.py`; services and
@@ -718,6 +824,20 @@ where that change belongs.
 10. **Every tool schema is sent to the model on every call** — 36 tools increase
     prompt size and can slow tool selection. Trim `STATIC_TOOLS` (or gate tools
     by config) if latency or cost matters.
+11. **prompt_toolkit needs a terminal** — with piped input, CI, or a shell without
+    a screen buffer it cannot attach. `build_prompt_session` then returns `None`
+    and `PlainPrompt` (plain `input()`) takes over. Commands, dispatch, and
+    rendering are identical; only completion and history are unavailable.
+12. **Literal symbols follow the console encoding** — `cli/glyphs.py` selects
+    Unicode or ASCII at import time from `sys.stdout.encoding`, and
+    `cli/background.py` does the same for the grid. On legacy Windows code pages
+    (cp1252) you get `*`, `>`, `+`, `x`, `-` instead of `●`, `❯`, `✓`, `✗`, `·`.
+    Rich downgrades its own box-drawing characters independently (the hero's
+    rounded corners become square, then ASCII).
+13. **Markdown rendering buffers the start of a response** — `_Response` holds the
+    first newline or 80 characters to classify the message. Plain prose starts
+    streaming as soon as that threshold is crossed; Markdown responses appear at
+    the end of the message rather than token by token.
 
 ---
 
@@ -743,24 +863,43 @@ uv run pytest
 ```
 
 Tests use `tmp_path` SQLite databases plus fake graph, LLM, title, thread, and
-checkpointer doubles (`tests/fakes.py`), so no OpenAI calls are made. Coverage
-includes configuration precedence, container wiring and schema creation, thread
-service CRUD and ordering, checkpoint cleanup on delete, `ChatService`
-streaming/title behavior and tool-event emission, the real `ToolNode` loop, every
-tool implementation (core, utilities, life, notes, mocks), notes persistence
-across separate SQLite connections, thread isolation of notes, schema migration
-for legacy note tables, CLI output and the interactive command loop, and package
-entry points.
+checkpointer doubles (`tests/fakes.py`), so no OpenAI calls are made and the real
+`chatbot_memory.db` is never opened. Coverage includes configuration precedence,
+container wiring and schema creation, thread service CRUD and ordering, checkpoint
+cleanup on delete, `ChatService` streaming/title behavior and tool-event emission,
+the real `ToolNode` loop, every tool implementation (core, utilities, life, notes,
+mocks), notes persistence across separate SQLite connections, thread isolation of
+notes, schema migration for legacy note tables, CLI rendering, the interactive
+command loop, and package entry points.
 
-Manual tool checks in the CLI:
+Presentation-specific tests:
+
+| File                             | Scope |
+| -------------------------------- | ----- |
+| `test_cli_registry.py`           | normalization, lookup, category grouping, prefix and fuzzy suggestions, input splitting |
+| `test_cli_commands.py`           | command-table invariants, dispatch routing, every handler, completion providers, secret safety |
+| `test_cli_chat.py`               | streaming vs Markdown rendering, tool visibility, error display, interrupt propagation |
+| `test_cli_input.py`              | completer behavior, glyph fallback, `run_session` routing and resilience, `ask()` |
+| `test_cli_prompt_integration.py` | real `PromptSession` with pipe input: Tab accepts commands and thread IDs, plain text untouched |
+| `test_cli_banner.py`             | emerald theme, the framed welcome hero, and the status readout |
+| `test_cli_rendering.py`          | background grid, framed input, and timed tool feedback |
+
+The prompt integration tests drive prompt_toolkit through `create_pipe_input()`
+with a `DummyOutput`, waiting on buffer state rather than sleeping, so they are
+deterministic and need no terminal.
+
+Manual checks in the CLI:
 
 ```text
-What's the monthly payment on a 250000 loan at 6% for 30 years?
+/help
+/help switch
+/th<tab>            → /threads
+/switch <tab>       → real thread IDs with titles
+/threds             → "Did you mean? /threads"
+What's the weather in Dhaka?
 Convert 100 USD to EUR.
 Save a note titled "groceries" with milk and eggs.
-What time is 12:00 UTC in Asia/Dhaka?
-What's the weather in Dhaka?
 ```
 
-Expect a `[tool]` line, a `[tool result: ...]` line, then the answer. Mock
-results include `"mock": true`.
+Expect a tool status line before the answer, Markdown structure preserved for
+structured responses, and mock results marked with `"mock": true`.

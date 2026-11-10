@@ -11,6 +11,14 @@ LangSmith tracing sends runs to LangSmith for debugging and monitoring. The code
 is split into presentation, service, graph, and persistence layers so a FastAPI
 backend can be added later without rewriting business logic.
 
+The terminal experience is a premium **emerald-grid** interface built with
+**Rich** and **prompt_toolkit**: a framed welcome hero with a neural-network grid
+backdrop and live runtime status, a `/` command menu with descriptions, Tab
+completion (including thread IDs), contextual help, fuzzy suggestions for typos,
+and Markdown rendering for structured answers. Colours and typography are
+centralised in a single design system (`cli/theme.py`) so the whole interface
+shares one emerald identity.
+
 For the full design and migration plan, see [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
 ## Project Goals
@@ -34,6 +42,8 @@ For the full design and migration plan, see [`ARCHITECTURE.md`](./ARCHITECTURE.m
 | **LangSmith**                     | Tracing and observability                |
 | **OpenAI**                        | Large language models                    |
 | **Pydantic / pydantic-settings**  | Configuration loading and validation     |
+| **Rich**                          | Terminal panels, tables, Markdown, color |
+| **prompt_toolkit**                | Input, autocomplete, history, shortcuts  |
 | **SQLite**                        | Thread metadata and checkpoint storage   |
 | **uv**                            | Package and project management           |
 | **FastAPI / Uvicorn**             | Planned HTTP layer (not implemented yet) |
@@ -54,13 +64,26 @@ agentic-chatbot/
 │   └── agentic_chatbot/
 │       ├── __init__.py          # Exposes main() for the console script
 │       ├── __main__.py          # python -m agentic_chatbot entry point
-│       ├── cli.py               # Terminal UI and command loop
-│       ├── container.py         # Composition root (wires all resources)
 │       ├── config.py            # settings + LangSmith env export
+│       ├── container.py         # Composition root (wires all resources)
 │       ├── llm.py               # ChatOpenAI factory
 │       ├── database.py          # SQLite connection + schema
 │       ├── models.py            # Thread, Note, and TurnEvent dataclasses
 │       ├── repository.py        # ThreadRepository + NotesRepository
+│       │
+│       ├── cli/                 # Terminal presentation (Rich + prompt_toolkit)
+│       │   ├── __init__.py      # public exports: main, run_session, dispatch
+│       │   ├── theme.py         # design system: emerald palette + surfaces
+│       │   ├── glyphs.py        # terminal-safe symbol fallback
+│       │   ├── background.py    # emerald grid + neural-node decoration
+│       │   ├── console.py       # Rich rendering (hero, messages, commands)
+│       │   ├── chat.py          # streaming turns + tool timing + status
+│       │   ├── commands.py      # single command table + handlers + dispatch
+│       │   ├── registry.py      # Command record, lookup, fuzzy matching
+│       │   ├── session.py       # per-run state shared by handlers
+│       │   ├── input.py         # framed prompt + prompt_toolkit completion
+│       │   └── app.py           # interactive loop + main()
+│       │
 │       ├── graph/
 │       │   ├── state.py         # ChatState
 │       │   ├── nodes.py         # chat node
@@ -87,10 +110,11 @@ agentic-chatbot/
 The application follows a one-way dependency flow:
 
 ```text
-cli.py  →  container.py  →  services  →  graph / repository  →  SQLite
+cli/  →  container.py  →  services  →  graph / repository  →  SQLite
 ```
 
-- **Presentation** (`cli.py`) — reads input and prints output only.
+- **Presentation** (`cli/`) — reads input and renders output only. No
+  conversation logic, SQL, or graph code lives here.
 - **Services** (`services/`) — chat orchestration, thread lifecycle, titles.
   Independent of any UI or HTTP framework.
 - **Graph** (`graph/`) — LangGraph state, the chat node, the `ToolNode`, and the
@@ -182,19 +206,243 @@ The console script is declared in `pyproject.toml`:
 agentic-chatbot = "agentic_chatbot:main"
 ```
 
+## The Terminal Interface
+
+The interface uses a **premium emerald-grid** identity: a deep dark background, a
+subtle geometric grid with neural-network nodes, and a single emerald accent
+(`#10B981`) reserved for identity and interactive elements. Colours, typography,
+and surfaces are centralised in `cli/theme.py`; no component hardcodes a colour.
+The layout is left-aligned and readable, with a framed hero on startup and a
+framed composer for input.
+
+```text
+╭──────────────────────────────────────────────────────╮
+│ ●───────┼───────┼───────┼───────┼───────┼───────●─── │
+│ │       │       │       │       │       │       │    │
+│                      BAYAZID AI                      │
+│                                                      │
+│                Personal AI Assistant                 │
+│ │       │       │       │       │       │       │    │
+│ ●───────●───────┼───────┼───────┼───────┼───────┼─── │
+╰──────────────────────────────────────────────────────╯
+  Your intelligent workspace.   ·   v0.1.0
+
+  ● MODEL    gpt-4o-mini       ● STORAGE  SQLite · connected
+  ● GRAPH    ready             ● TRACING  on
+  ● TOOLS    36                ● SESSION  0367932
+
+  /help commands  ·  /threads conversations  ·  /new new conversation
+
+  /help for commands  ·  /exit to quit
+```
+
+The hero frames the brand lockup over a neural-network grid. The grid strokes are
+a very dark green so they read as texture rather than noise, and the title is
+stamped on a cleared row so text never sits on a background character. Below the
+hero, emerald status bullets report the model, storage health, graph state,
+tracing state, tool count, and a short session ID — every one a real runtime
+fact. `/status` shows a detailed readout instead, including the database path and
+its health check. Neither surface prints API keys or other secrets.
+
+The composer is a framed prompt — a top rule, a left rail, and an emerald `❯` —
+with a slim status bar underneath that tracks the model, short thread ID,
+directory, and keybindings:
+
+```text
+  ──────────────────────────────────────────────────────
+  │ ❯ Ask me anything…
+  gpt-4o-mini · 03679327 · agentic-chatbot · /help · enter send · ctrl+d exit
+```
+
+### Transcript grammar
+
+Each message is labelled and tool activity is marked as it happens, using the
+real LangGraph event stream:
+
+| Marker | Row |
+| ------ | --- |
+| `YOU` | your message |
+| `BAYAZID AI` | the assistant's reply, streamed live or rendered as Markdown |
+| `● Executing tool: <name> · running` | a tool call, announced when it starts |
+| `✓ Completed · 0.3s` | a tool result, with measured elapsed time |
+| `✗ Failed` | a failed tool or error, printed inline so it stays selectable |
+
+```text
+YOU
+What's the weather in Dhaka?
+
+BAYAZID AI
+Let me check that for you.
+  ● Executing tool: get_weather  ● running
+    ✓ Completed · 0.3s
+It is currently 27°C and clear in Dhaka.
+```
+
+A status bar under the composer tracks the model, short thread ID, working
+directory, `/help`, and the active keybindings. The message transcript is
+left-aligned plain rows — no heavy boxes around every message — so resizing the
+window cannot garble earlier output. The hero's box drawing degrades with Unicode
+support, and every literal glyph falls back to an ASCII equivalent on terminals
+that cannot encode it (`●`→`*`, `✓`→`+`, `❯`→`>`, `✗`→`x`).
+
+### Command menu and completion
+
+Typing `/` lists every command with its description; typing a partial command
+narrows the list. Tab accepts the highlighted suggestion, Up/Down move through
+the menu and input history.
+
+```text
+❯ /th
+  /threads       List all conversations
+```
+
+Arguments complete too. `/switch ` and `/delete ` suggest real thread IDs from
+the database, with each conversation title shown beside the ID:
+
+```text
+❯ /switch ab
+  ab12f0c3-...   Weekly planning
+  ab98d771-...   Receipt questions
+```
+
+### Keyboard shortcuts
+
+| Shortcut       | Action                                       |
+| -------------- | -------------------------------------------- |
+| `Tab`          | Accept the selected completion               |
+| `Up` / `Down`  | Navigate suggestions and input history       |
+| `Enter`        | Submit input                                 |
+| `Ctrl+C`       | Interrupt input and continue chatting        |
+| `Ctrl+D`       | Exit on an empty line                        |
+
+`Ctrl+C` during a response stops that turn; the session and its history remain
+intact. The loop keeps running until `/exit` or `Ctrl+D`.
+
+### Rendering
+
+User messages, assistant answers, tool activity, notices, and errors each have a
+distinct visual treatment:
+
+```text
+YOU
+What's the weather in Dhaka?
+
+BAYAZID AI
+Let me check that for you.
+  ● Executing tool: get_weather  ● running
+    ✓ Completed · 0.3s
+It is currently 27°C in Dhaka.
+
+  Conversation title: Weather in Dhaka
+```
+
+Plain prose streams token by token as the model produces it. When a response
+starts a Markdown block (heading, list, table, code fence), the text is buffered
+and rendered with Rich so structure is preserved instead of appearing as raw
+symbols. Tool calls and results are announced as they happen — a call is shown as
+`● Executing tool: …`, and its result reports `✓ Completed` or `✗ Failed` with the
+measured elapsed time. Nothing is fabricated: only operations that actually run
+are shown.
+
+### Terminal compatibility
+
+The emerald palette is emitted as truecolor where available and downgrades
+gracefully otherwise. The hero's rounded box and the grid's box/node characters
+degrade with Unicode support (rounded → square → ASCII), and literal symbols
+(bullet, check mark, prompt, arrow) are chosen at startup from the console
+encoding so the UI stays readable on legacy Windows code pages instead of raising
+`UnicodeEncodeError`. The framed composer tracks terminal resizes. If
+prompt_toolkit cannot attach to a console at all (piped input, CI, some legacy
+shells), the CLI falls back to a plain prompt with the same commands.
+
 ## CLI Commands
 
-| Command         | Description                               |
-| --------------- | ----------------------------------------- |
-| `/new`          | Create a new conversation                 |
-| `/threads`      | List all conversations                    |
-| `/switch`       | Switch to another conversation by ID      |
-| `/history`      | Show the current conversation history     |
-| `/rename`       | Rename the current conversation           |
-| `/delete`       | Delete a conversation and its checkpoints |
-| `/help`         | Show available commands                   |
-| `/exit`         | Exit the chatbot                          |
-| _anything else_ | Send a chat message                       |
+Every command is defined once in `src/agentic_chatbot/cli/commands.py`. That
+table drives execution, the `/` menu, Tab completion, `/help`, and typo
+suggestions.
+
+| Command    | Description                                | Category     |
+| ---------- | ------------------------------------------ | ------------ |
+| `/help`    | Show commands, or details for one command  | General      |
+| `/clear`   | Clear the terminal screen                  | General      |
+| `/status`  | Show model, database, graph, and tracing   | General      |
+| `/version` | Show the application version               | General      |
+| `/exit`    | Exit the chatbot                           | General      |
+| `/new`     | Create a new conversation                   | Conversation |
+| `/threads` | List all conversations                     | Conversation |
+| `/switch`  | Switch to another conversation by ID       | Conversation |
+| `/history` | Show the current conversation history      | Conversation |
+| `/rename`  | Rename the current conversation            | Conversation |
+| `/delete`  | Delete a conversation and its checkpoints  | Conversation |
+| _anything else_ | Send a chat message                   | —            |
+
+`/help <command>` explains one command:
+
+```text
+❯ /help switch
+
+  /switch   Switch to another conversation
+
+  USAGE      /switch [thread_id]
+  ARGUMENTS  Thread ID. Tab-completes existing conversations.
+  EXAMPLE    /switch 3f2c1b9a-7d4e-4c1a-9f2b-0a1b2c3d4e5f
+  BEHAVIOUR  Makes an existing thread active. Prompts with tab
+             completion if no ID is given.
+```
+
+`/switch`, `/rename`, and `/delete` prompt for their argument when it is
+omitted, so a bare command still works. `/clear` only clears the screen; it
+never deletes messages, and conversation history is unaffected.
+
+### Unknown commands
+
+Slash input is never forwarded to the LLM. A typo produces a scored suggestion
+instead:
+
+```text
+❯ /threds
+
+  Unknown command: /threds
+  Did you mean?
+    /threads   List all conversations
+```
+
+Ordinary text (anything not starting with `/`) is still sent to the LangGraph
+agent exactly as before.
+
+### Adding a command
+
+`COMMANDS` in `src/agentic_chatbot/cli/commands.py` is the single source of truth.
+Append one `Command` and execution, the `/` menu, Tab completion, `/help`, and
+typo suggestions all include it automatically.
+
+```python
+def _models(session: ChatSession, argument: str) -> None:
+    ui.document(session.console, "Model", session.settings.llm_model)
+
+
+Command(
+    name="/models",
+    description="Show the configured model",
+    category=CATEGORY_GENERAL,
+    usage="/models",
+    example="/models",
+    behavior="Prints the model name from settings.",
+    arguments="None.",
+    handler=_models,
+)
+```
+
+Guidelines:
+
+- Put handlers in `commands.py`; keep rendering in `console.py`.
+- Never read or write the database directly — call `session.thread_service` or
+  `session.chat_service`.
+- Use `ui.*` helpers for output so styling stays consistent.
+- For argument completion, add an `arg_completer` returning real data (see
+  `_thread_ids`); never hardcode IDs.
+- Add the name to `CATEGORY_GENERAL` or `CATEGORY_CONVERSATION` so it appears in
+  the right help section.
 
 ## Tools
 
@@ -204,9 +452,9 @@ executes them and routes back to the chat node for a final answer. Tool activity
 is printed as it happens:
 
 ```text
-Assistant:
-[tool] get_weather({"location": "Dhaka", "unit": "celsius"})
-[tool result: get_weather] {"temperature": 27, ...}
+BAYAZID AI
+  ● Executing tool: get_weather  ● running
+    ✓ Completed · 0.3s
 It is currently 27°C in Dhaka.
 ```
 
@@ -273,8 +521,8 @@ returned from `get_tools(repository)` instead.
 - `TurnEvent(type="done", title=...)` when the turn is persisted; `title` is set
   only when a new title was generated on the first turn.
 
-The CLI prints these events directly (`[tool]` / `[tool result: ...]` lines for
-tool activity). A future SSE endpoint can map the same events to `event: token` /
+The CLI prints these events directly (`● Executing tool: …` / `✓ Completed`
+lines for tool activity). A future SSE endpoint can map the same events to `event: token` /
 `event: tool_call` / `event: tool_result` / `event: done` without changing the
 service.
 
@@ -316,12 +564,28 @@ uv run pytest
 ```
 
 The suite uses temporary SQLite databases and fake graph/LLM implementations, so
-it never calls the OpenAI API. It covers configuration precedence, container
-wiring and schema creation, thread lifecycle and ordering, checkpoint cleanup on
-delete, streaming and title generation, tool execution and event emission, the
-individual tool implementations (calculators, utilities, notes, and mocks),
-notes persistence across SQLite connections, CLI rendering, the interactive
-command loop, and package entry points.
+it never calls the OpenAI API and never touches `chatbot_memory.db`. It covers
+configuration precedence, container wiring and schema creation, thread lifecycle
+and ordering, checkpoint cleanup on delete, streaming and title generation, tool
+execution and event emission, the individual tool implementations (calculators,
+utilities, notes, and mocks), notes persistence across SQLite connections, CLI
+rendering, the interactive command loop, and package entry points.
+
+The CLI has dedicated coverage across these test files (206 of the 299 tests):
+
+| Test file                        | Covers                                                         |
+| -------------------------------- | -------------------------------------------------------------- |
+| `test_cli_registry.py`           | command lookup, normalization, grouping, prefix and fuzzy match |
+| `test_cli_commands.py`           | the command table, dispatch routing, and every handler          |
+| `test_cli_chat.py`               | streaming, tool visibility, Markdown detection, error display   |
+| `test_cli_input.py`              | completion logic, glyph fallback, loop behavior, input routing  |
+| `test_cli_prompt_integration.py` | real `PromptSession` Tab completion for commands and arguments  |
+| `test_cli_banner.py`             | emerald theme, the framed welcome hero, and the status readout  |
+| `test_cli_rendering.py`          | background grid, framed input, and timed tool feedback          |
+
+Notable assertions: unknown slash commands are never forwarded to the LLM, plain
+text always is, secrets never appear in status output, and both the
+prompt_toolkit and plain-input paths stay usable.
 
 ```bash
 # Optional: byte-compile the package
@@ -349,6 +613,9 @@ uv run python -m compileall -q src/agentic_chatbot
 - [x] Automated test suite
 - [x] LangSmith observability and tracing
 - [x] Tool calling and integration
+- [x] Professional terminal UI (Rich + prompt_toolkit)
+- [x] Emerald-grid design system with neural-network background
+- [x] Command registry with autocomplete, help, and fuzzy suggestions
 - [ ] FastAPI backend integration
 - [ ] Agentic decision-making
 - [ ] Cross-thread memory management
@@ -357,14 +624,19 @@ uv run python -m compileall -q src/agentic_chatbot
 
 ## Current Status
 
-The modular CLI is operational. Conversation threads, automatic titles, history,
-streaming, tool calling, and SQLite persistence all run through the service layer
-under `src/agentic_chatbot/`. Thirty-six tools are registered in
+The modular CLI is operational with a polished emerald-grid terminal interface.
+Conversation threads, automatic titles, history, streaming, tool calling, and
+SQLite persistence all run through the service layer under
+`src/agentic_chatbot/`. The presentation layer is a `cli/` package: a centralised
+emerald design system (`theme.py`), an emerald-grid background renderer
+(`background.py`), a Rich renderer, a prompt_toolkit input layer, and one command
+table. Thirty-six tools are registered in
 `src/agentic_chatbot/tools/` — local utilities plus mock implementations of
 common API-backed tools (weather, search, email, calendar, currency, …) that
 return `"mock": true` data until real credentials are configured. Notes are
 stored in SQLite per conversation, so they survive restarts and stay private to
-each thread. Add a tool to `registry.py` to expose it to the model. LangSmith
-tracing is available when enabled through `.env`. FastAPI is not part of the
-current runtime; it is the next planned milestone, and `ARCHITECTURE.md`
-documents how to wire it in without touching the services.
+each thread. Add a tool to `registry.py` to expose it to the model, or a command
+to `cli/commands.py` to expose it to the user. LangSmith tracing is available
+when enabled through `.env`. FastAPI is not part of the current runtime; it is
+the next planned milestone, and `ARCHITECTURE.md` documents how to wire it in
+without touching the services.

@@ -51,7 +51,6 @@ def test_slash_lists_every_command():
     ("typed", "expected"),
     [
         ("/th", "/threads"),
-        ("/swi", "/switch"),
         ("/ren", "/rename"),
         ("/hel", "/help"),
     ],
@@ -78,19 +77,19 @@ def test_normal_chat_text_produces_no_completions():
 
 
 def test_argument_completion_uses_real_thread_ids():
-    entries = completions("/switch ab")
+    entries = completions("/delete ab")
 
     assert [item.text for item in entries] == ["abc-123", "abd-456"]
 
 
 def test_argument_completion_filters_by_prefix():
-    entries = completions("/switch abd")
+    entries = completions("/delete abd")
 
     assert [item.text for item in entries] == ["abd-456"]
 
 
 def test_argument_completion_replaces_argument_only():
-    entry = completions("/switch abc")[0]
+    entry = completions("/delete abc")[0]
 
     assert entry.start_position == -3
 

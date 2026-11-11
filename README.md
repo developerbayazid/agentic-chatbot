@@ -296,14 +296,34 @@ the menu and input history.
   /threads       List all conversations
 ```
 
-Arguments complete too. `/switch ` and `/delete ` suggest real thread IDs from
-the database, with each conversation title shown beside the ID:
+`/delete` completes thread IDs from the database, with each conversation title
+shown beside the ID:
 
 ```text
-❯ /switch ab
+❯ /delete ab
   ab12f0c3-...   Weekly planning
   ab98d771-...   Receipt questions
 ```
+
+### Session picker
+
+`/threads` opens an interactive picker: a search box over a live table of
+conversations showing recency, message count, and a `●` marker on the active
+thread. Type to filter, `Up`/`Down` to move, `Enter` to switch, `Esc` to cancel.
+
+```text
+› Type to search sessions…
+─────────────────────────────────────────────────────────────
+  #   Modified   Git Branch  Messages  Summary
+  1.  18h ago    -               270  Terminal UI Redesign  ●
+› 2.  19h ago    -               817  Business Analytics Tools
+  3.  1d ago     -               224  Tool Integration Plan
+
+  ↑/↓ move  ·  Enter open  ·  Esc cancel
+```
+
+On terminals where prompt_toolkit cannot attach (piped input, CI), `/threads`
+falls back to the plain static list.
 
 ### Keyboard shortcuts
 
@@ -369,8 +389,7 @@ suggestions.
 | `/version` | Show the application version               | General      |
 | `/exit`    | Exit the chatbot                           | General      |
 | `/new`     | Create a new conversation                   | Conversation |
-| `/threads` | List all conversations                     | Conversation |
-| `/switch`  | Switch to another conversation by ID       | Conversation |
+| `/threads` | Open the session picker to switch          | Conversation |
 | `/history` | Show the current conversation history      | Conversation |
 | `/rename`  | Rename the current conversation            | Conversation |
 | `/delete`  | Delete a conversation and its checkpoints  | Conversation |
@@ -379,19 +398,20 @@ suggestions.
 `/help <command>` explains one command:
 
 ```text
-❯ /help switch
+❯ /help delete
 
-  /switch   Switch to another conversation
+  /delete   Delete a conversation and its messages
 
-  USAGE      /switch [thread_id]
-  ARGUMENTS  Thread ID. Tab-completes existing conversations.
-  EXAMPLE    /switch 3f2c1b9a-7d4e-4c1a-9f2b-0a1b2c3d4e5f
-  BEHAVIOUR  Makes an existing thread active. Prompts with tab
-             completion if no ID is given.
+  USAGE      /delete [thread_id]
+  ARGUMENTS  Thread ID. Omit to pick from the picker; tab-completes
+             existing conversations.
+  EXAMPLE    /delete 3f2c1b9a-7d4e-4c1a-9f2b-0a1b2c3d4e5f
+  BEHAVIOUR  Opens the session picker (or takes a thread ID), confirms,
+             then deletes checkpoints and metadata.
 ```
 
-`/switch`, `/rename`, and `/delete` prompt for their argument when it is
-omitted, so a bare command still works. `/clear` only clears the screen; it
+`/rename` prompts for its argument when omitted, and a bare `/delete` opens the
+picker to choose what to remove. `/clear` only clears the screen; it
 never deletes messages, and conversation history is unaffected.
 
 ### Unknown commands
@@ -571,7 +591,7 @@ execution and event emission, the individual tool implementations (calculators,
 utilities, notes, and mocks), notes persistence across SQLite connections, CLI
 rendering, the interactive command loop, and package entry points.
 
-The CLI has dedicated coverage across these test files (206 of the 299 tests):
+The CLI has dedicated coverage across these test files (234 of the 327 tests):
 
 | Test file                        | Covers                                                         |
 | -------------------------------- | -------------------------------------------------------------- |
@@ -582,6 +602,7 @@ The CLI has dedicated coverage across these test files (206 of the 299 tests):
 | `test_cli_prompt_integration.py` | real `PromptSession` Tab completion for commands and arguments  |
 | `test_cli_banner.py`             | emerald theme, the framed welcome hero, and the status readout  |
 | `test_cli_rendering.py`          | background grid, framed input, and timed tool feedback          |
+| `test_cli_picker.py`             | session picker: timing, filtering, selection, keyboard drive    |
 
 Notable assertions: unknown slash commands are never forwarded to the LLM, plain
 text always is, secrets never appear in status output, and both the

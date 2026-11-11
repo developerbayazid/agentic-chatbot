@@ -76,7 +76,6 @@ def _run_prompt(session, pipe, typed, expected):
     ("typed", "expected"),
     [
         ("/thr", "/threads"),
-        ("/swi", "/switch"),
         ("/ren", "/rename"),
         ("/hel", "/help"),
     ],
@@ -94,11 +93,11 @@ def test_tab_completes_thread_id_argument(session, container):
         result = _run_prompt(
             session,
             pipe,
-            f"/switch {prefix}",
-            f"/switch {other.thread_id}",
+            f"/delete {prefix}",
+            f"/delete {other.thread_id}",
         )
 
-    assert result == f"/switch {other.thread_id}"
+    assert result == f"/delete {other.thread_id}"
 
 
 def test_plain_text_is_not_altered_by_completion(session):

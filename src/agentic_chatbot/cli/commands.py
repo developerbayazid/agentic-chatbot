@@ -95,11 +95,22 @@ def _new(session: ChatSession, argument: str) -> None:
 
 
 def _threads(session: ChatSession, argument: str) -> None:
-    ui.show_threads(
-        session.console,
-        session.thread_service.list_threads(),
-        session.current_thread_id,
-    )
+    threads = session.thread_service.list_threads()
+
+    if not threads:
+        ui.notice(session.console, "No conversations yet. Use /new to start one.")
+        return
+
+    chosen = session.pick(session, threads)
+    if chosen is None:
+        return
+
+    if chosen.thread_id == session.current_thread_id:
+        ui.notice(session.console, f"Already in {chosen.title}.")
+        return
+
+    session.current_thread_id = chosen.thread_id
+    ui.success(session.console, f"Switched to {chosen.title}")
 
 
 def _thread_ids(session: ChatSession, prefix: str) -> list[Completion]:
@@ -109,33 +120,6 @@ def _thread_ids(session: ChatSession, prefix: str) -> list[Completion]:
         for thread in session.thread_service.list_threads()
         if thread.thread_id.startswith(prefix)
     ]
-
-
-def _known_thread(session: ChatSession, argument: str) -> str | None:
-    """Validate a thread ID argument, or prompt for one."""
-    thread_id = argument.strip() or session.ask(
-        "Thread ID: ", _thread_ids(session, "")
-    ).strip()
-
-    if not thread_id:
-        ui.warning(session.console, "No thread ID given. Use /threads to list them.")
-        return None
-
-    if not session.thread_service.thread_exists(thread_id):
-        ui.error(session.console, f"Thread not found: {thread_id}")
-        return None
-
-    return thread_id
-
-
-def _switch(session: ChatSession, argument: str) -> None:
-    thread_id = _known_thread(session, argument)
-    if thread_id is None:
-        return
-
-    session.current_thread_id = thread_id
-    thread = session.thread_service.get_thread(thread_id)
-    ui.success(session.console, f"Switched to {thread.title if thread else thread_id}")
 
 
 def _history(session: ChatSession, argument: str) -> None:
@@ -157,15 +141,20 @@ def _rename(session: ChatSession, argument: str) -> None:
 
 
 def _delete(session: ChatSession, argument: str) -> None:
-    if not argument:
-        ui.show_threads(
-            session.console,
-            session.thread_service.list_threads(),
-            session.current_thread_id,
-        )
+    thread_id = argument.strip()
 
-    thread_id = _known_thread(session, argument)
-    if thread_id is None:
+    if not thread_id:
+        threads = session.thread_service.list_threads()
+        if not threads:
+            ui.notice(session.console, "No conversations yet.")
+            return
+        chosen = session.pick(session, threads)
+        if chosen is None:
+            return
+        thread_id = chosen.thread_id
+
+    if not session.thread_service.thread_exists(thread_id):
+        ui.error(session.console, f"Thread not found: {thread_id}")
         return
 
     answer = session.ask(f"Delete {thread_id} and its messages? (y/n): ")
@@ -193,7 +182,7 @@ COMMANDS: list[Command] = [
         description="Show available commands, or details for one command",
         category=CATEGORY_GENERAL,
         usage="/help [command]",
-        example="/help switch",
+        example="/help delete",
         behavior="Lists every command by category, or explains one command in detail.",
         arguments="Optional command name, with or without the leading slash.",
         handler=_help,
@@ -254,20 +243,9 @@ COMMANDS: list[Command] = [
         category=CATEGORY_CONVERSATION,
         usage="/threads",
         example="/threads",
-        behavior="Shows titles, thread IDs, and last update times, marking the active one.",
+        behavior="Opens the session picker: search and arrow keys to navigate, Enter to switch.",
         arguments="None.",
         handler=_threads,
-    ),
-    Command(
-        name="/switch",
-        description="Switch to another conversation",
-        category=CATEGORY_CONVERSATION,
-        usage="/switch [thread_id]",
-        example="/switch 3f2c1b9a-7d4e-4c1a-9f2b-0a1b2c3d4e5f",
-        behavior="Makes an existing thread active. Prompts with tab completion if no ID is given.",
-        arguments="Thread ID. Tab-completes existing conversations.",
-        handler=_switch,
-        arg_completer=_thread_ids,
     ),
     Command(
         name="/history",
@@ -295,8 +273,8 @@ COMMANDS: list[Command] = [
         category=CATEGORY_CONVERSATION,
         usage="/delete [thread_id]",
         example="/delete 3f2c1b9a-7d4e-4c1a-9f2b-0a1b2c3d4e5f",
-        behavior="Confirms first, then deletes checkpoints and metadata. Deleting the active thread creates a replacement.",
-        arguments="Thread ID. Tab-completes existing conversations.",
+        behavior="Opens the session picker (or takes a thread ID), confirms, then deletes checkpoints and metadata. Deleting the active thread creates a replacement.",
+        arguments="Thread ID. Omit to pick from the picker; tab-completes existing conversations.",
         handler=_delete,
         arg_completer=_thread_ids,
     ),

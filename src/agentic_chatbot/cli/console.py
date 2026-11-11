@@ -446,7 +446,7 @@ def _show_threads_table(
     blank(console)
     console.print(
         Text(
-            "  /switch and /delete accept the full thread ID; Tab completes it.",
+            "  /delete accepts the full thread ID; Tab completes it.",
             style=PALETTE.very_subtle,
         )
     )

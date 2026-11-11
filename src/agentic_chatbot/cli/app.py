@@ -8,6 +8,7 @@ import sys
 from rich.console import Console
 
 from agentic_chatbot.cli import console as ui
+from agentic_chatbot.cli import picker
 from agentic_chatbot.cli.chat import build_status
 from agentic_chatbot.cli.commands import COMMANDS, dispatch, get_version
 from agentic_chatbot.cli.input import (
@@ -67,6 +68,8 @@ def run_session(
         prompt_session = build_prompt_session(session, COMMANDS) or PlainPrompt()
 
     session.ask = make_ask(prompt_session)
+    if picker.supports_interactive(prompt_session):
+        session.pick = picker.pick
 
     while session.running:
         try:

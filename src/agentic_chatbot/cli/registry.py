@@ -125,7 +125,7 @@ def similar_commands(
 def split_input(text: str) -> tuple[str, str]:
     """Split raw input into ``(command_part, argument)``.
 
-    ``"/switch abc"`` -> ``("/switch", "abc")``; ``"/help"`` -> ``("/help", "")``.
+    ``"/delete abc"`` -> ``("/delete", "abc")``; ``"/help"`` -> ``("/help", "")``.
     """
     stripped = text.strip()
     if not stripped:

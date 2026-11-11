@@ -9,26 +9,38 @@ from rich.console import Console
 
 from agentic_chatbot.cli.registry import Completion
 from agentic_chatbot.container import ChatbotContainer
+from agentic_chatbot.models import Thread
 
 AskFn = Callable[[str, Sequence[Completion]], str]
+PickFn = Callable[["ChatSession", Sequence[Thread]], "Thread | None"]
 
 
 def _unavailable_ask(prompt: str, completions: Sequence[Completion] = ()) -> str:
     raise RuntimeError("interactive prompt is not available in this context")
 
 
+def _fallback_pick(session: "ChatSession", threads: Sequence[Thread]) -> Thread | None:
+    """Non-interactive default: render the static list and make no selection."""
+    from agentic_chatbot.cli import console as ui
+
+    ui.show_threads(session.console, threads, session.current_thread_id)
+    return None
+
+
 @dataclass
 class ChatSession:
     """Mutable state for one interactive run.
 
-    ``ask`` is injected by the input layer so command handlers can request an
-    argument without knowing anything about prompt_toolkit.
+    ``ask`` and ``pick`` are injected by the input/presentation layer so command
+    handlers can request an argument or choose a conversation without knowing
+    anything about prompt_toolkit.
     """
 
     container: ChatbotContainer
     console: Console
     current_thread_id: str
     ask: AskFn = field(default=_unavailable_ask)
+    pick: PickFn = field(default=_fallback_pick)
     running: bool = True
 
     @property

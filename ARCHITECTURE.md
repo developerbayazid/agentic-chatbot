@@ -55,6 +55,7 @@ agentic-chatbot/
         │   ├── registry.py      # Command record, lookup, fuzzy matching
         │   ├── session.py       # per-run state shared by handlers
         │   ├── input.py         # framed prompt + prompt_toolkit completion
+        │   ├── picker.py        # interactive /threads session picker
         │   └── app.py           # interactive loop + main()
         │
         ├── config.py            # pydantic-settings Settings (env + .env)
@@ -429,6 +430,7 @@ polished terminal experience, and nothing else.
 | `chat.py` | `process_message` maps `TurnEvent`s to renderer calls and measures real tool elapsed time; `build_status` collects display-safe runtime facts. The `_Response` buffer decides between live streaming and Markdown rendering and closes a streamed line before tool activity. |
 | `session.py` | `ChatSession` — mutable per-run state: container, console, `current_thread_id`, `running`, and an injectable `ask` used by handlers that need an argument. Exposes `thread_service`/`chat_service`/`settings` convenience properties and `process()`. |
 | `input.py` | `CommandCompleter` (command names, then per-command argument completions), `framed_message` (the width-adaptive top-rule + left-rail composer), `build_prompt_session` (framed message + `bottom_toolbar` status bar), `read_input`, `make_ask`, and `PlainPrompt` for terminals where prompt_toolkit cannot attach. |
+| `picker.py` | Interactive `/threads` session picker: a prompt_toolkit `Application` with a search buffer and a live table (recency, message count, active marker). `relative_time`, `build_rows`, `filter_rows` are pure; `pick` runs the application and returns the chosen thread, falling back to the static list off a TTY. |
 | `glyphs.py` | `g(name)` returns a Unicode or ASCII symbol depending on the stdout encoding, preventing `UnicodeEncodeError` on legacy code pages. |
 | `app.py` | `run_session(container, console, prompt_session=None)` and `main()`. Owns the loop, resumes the most recent thread, and always closes the connection in a `finally` block. |
 
@@ -451,15 +453,15 @@ class Command:
 ```
 
 Two categories exist — `General` (`/help`, `/clear`, `/status`, `/version`,
-`/exit`) and `Conversation` (`/new`, `/threads`, `/switch`, `/history`,
-`/rename`, `/delete`) — and `CATEGORY_ORDER` fixes their display order.
+`/exit`) and `Conversation` (`/new`, `/threads`, `/history`, `/rename`,
+`/delete`) — and `CATEGORY_ORDER` fixes their display order.
 
 **Dispatch.** Slash input never reaches the model. `dispatch` looks the name up
 with `resolve` (accepting `help` and `/help` alike); an unknown name triggers
 `similar_commands` and an inline "Did you mean?" warning. Only
 non-slash text returns `False` and becomes a chat turn.
 
-**Argument completion.** `/switch` and `/delete` declare `arg_completer=_thread_ids`,
+**Argument completion.** `/delete` declares `arg_completer=_thread_ids`,
 which reads `ThreadService.list_threads()` at completion time and returns
 `Completion(thread_id, title)` pairs. Thread IDs therefore always come from the
 database and cannot drift from the real state.
@@ -567,13 +569,11 @@ LangGraph's default `recursion_limit` (25) caps the number of round trips.
 /new      → ThreadService.create_thread() → INSERT into threads
             → session.current_thread_id updated
 /threads  → ThreadService.list_threads()   → SELECT ordered by updated_at
-            → Rich list, active thread marked
-/switch   → thread_exists? → set current_thread_id (no DB write)
-            argument comes from the command line or an ask() prompt
-            with tab completion over real thread IDs
+            → interactive picker (search, ↑/↓, Enter) or static list off-TTY
 /history  → ChatService.get_messages()     → checkpointer state
 /rename   → ThreadService.rename_thread()  → UPDATE title, updated_at
-/delete   → confirm via ask(); ThreadService.delete_thread()
+/delete   → pick a thread (picker or arg), confirm via ask()
+            → ThreadService.delete_thread()
               ├─ checkpointer.delete_thread(id)
               └─ repository.delete(id)
             if it was active → create a replacement thread
@@ -883,6 +883,7 @@ Presentation-specific tests:
 | `test_cli_prompt_integration.py` | real `PromptSession` with pipe input: Tab accepts commands and thread IDs, plain text untouched |
 | `test_cli_banner.py`             | emerald theme, the framed welcome hero, and the status readout |
 | `test_cli_rendering.py`          | background grid, framed input, and timed tool feedback |
+| `test_cli_picker.py`             | relative-time/filter/row data and the headless keyboard drive |
 
 The prompt integration tests drive prompt_toolkit through `create_pipe_input()`
 with a `DummyOutput`, waiting on buffer state rather than sleeping, so they are
@@ -892,9 +893,9 @@ Manual checks in the CLI:
 
 ```text
 /help
-/help switch
+/help delete
 /th<tab>            → /threads
-/switch <tab>       → real thread IDs with titles
+/delete <tab>       → real thread IDs with titles
 /threds             → "Did you mean? /threads"
 What's the weather in Dhaka?
 Convert 100 USD to EUR.

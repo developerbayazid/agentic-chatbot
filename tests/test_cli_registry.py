@@ -35,7 +35,7 @@ COMMANDS = [
     _command("/exit"),
     _command("/new", CATEGORY_CONVERSATION),
     _command("/threads", CATEGORY_CONVERSATION),
-    _command("/switch", CATEGORY_CONVERSATION),
+    _command("/delete", CATEGORY_CONVERSATION),
 ]
 
 
@@ -71,7 +71,7 @@ def test_command_names_are_ordered_as_declared():
         "/exit",
         "/new",
         "/threads",
-        "/switch",
+        "/delete",
     ]
 
 
@@ -86,8 +86,8 @@ def test_grouped_orders_known_categories_first_and_sorts_names():
     assert [command.name for command in general] == ["/exit", "/help"]
     conversation = dict(groups)[CATEGORY_CONVERSATION]
     assert [command.name for command in conversation] == [
+        "/delete",
         "/new",
-        "/switch",
         "/threads",
     ]
 
@@ -101,9 +101,9 @@ def test_grouped_places_unknown_categories_last():
 @pytest.mark.parametrize(
     ("prefix", "expected"),
     [
-        ("/", ["/exit", "/help", "/new", "/switch", "/threads"]),
+        ("/", ["/exit", "/help", "/delete", "/new", "/threads"]),
         ("/th", ["/threads"]),
-        ("/swi", ["/switch"]),
+        ("/del", ["/delete"]),
         ("/HELP", ["/help"]),
     ],
 )
@@ -134,7 +134,7 @@ def test_similar_commands_handles_blank_name():
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        ("/switch abc", ("/switch", "abc")),
+        ("/delete abc", ("/delete", "abc")),
         ("/help", ("/help", "")),
         ("  /rename   my chat  ", ("/rename", "my chat")),
         ("hello", ("hello", "")),

@@ -48,7 +48,6 @@ def test_documented_commands_are_registered():
         "/exit",
         "/new",
         "/threads",
-        "/switch",
         "/history",
         "/rename",
         "/delete",
@@ -99,12 +98,12 @@ def test_help_lists_commands_by_category(session, console):
 
 
 def test_help_for_single_command_shows_usage_and_example(session, console):
-    dispatch(session, "/help switch")
+    dispatch(session, "/help delete")
 
     text = output(console)
-    assert "/switch" in text
-    assert "/switch [thread_id]" in text
-    assert "Thread ID. Tab-completes existing conversations." in text
+    assert "/delete" in text
+    assert "/delete [thread_id]" in text
+    assert "Omit to pick from the picker" in text
 
 
 def test_help_accepts_names_without_slash(session, console):
@@ -142,49 +141,11 @@ def test_threads_command_marks_active_thread(session, container, console):
     assert "active" in text
 
 
-def test_switch_to_known_thread(session, container, console):
-    other = container.thread_service.create_thread("Other chat")
-
-    dispatch(session, f"/switch {other.thread_id}")
-
-    assert session.current_thread_id == other.thread_id
-    assert "Switched to Other chat" in output(console)
-
-
-def test_switch_rejects_unknown_thread(session, console):
-    before = session.current_thread_id
-
-    dispatch(session, "/switch missing-thread")
-
-    assert session.current_thread_id == before
-    assert "Thread not found: missing-thread" in output(console)
-
-
-def test_switch_prompts_with_argument_completions(session, console, monkeypatch):
-    other = session.thread_service.create_thread("Prompted chat")
-    asked = {}
-
-    def fake_ask(question, completions=()):
-        asked["question"] = question
-        asked["completions"] = [item.text for item in completions]
-        return other.thread_id
-
-    monkeypatch.setattr(session, "ask", fake_ask)
-
-    dispatch(session, "/switch")
-
-    assert session.current_thread_id == other.thread_id
-    assert other.thread_id in asked["completions"]
-    assert set(asked["completions"]) == {
-        thread.thread_id for thread in session.thread_service.list_threads()
-    }
-
-
 def test_thread_argument_completer_returns_real_threads(session):
-    switch = next(command for command in COMMANDS if command.name == "/switch")
+    delete = next(command for command in COMMANDS if command.name == "/delete")
     threads = session.thread_service.list_threads()
 
-    completions = switch.arg_completer(session, threads[0].thread_id[:4])
+    completions = delete.arg_completer(session, threads[0].thread_id[:4])
 
     assert [item.text for item in completions] == [threads[0].thread_id]
     assert completions[0].description == threads[0].title

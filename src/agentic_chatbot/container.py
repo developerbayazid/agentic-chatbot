@@ -32,10 +32,23 @@ from agentic_chatbot.services import (
 from agentic_chatbot.tools import get_tools
 from agentic_chatbot.vector_store import VectorIndexStore
 
-RAG_HINT = (
-    "\n\nWhen a question could be answered by the user's ingested documents, "
-    "call search_documents first and cite the document title and source "
-    "(and page number for PDFs). If nothing is found, say so instead of guessing."
+TOOL_GUIDANCE = (
+    "\n\nTool selection:\n"
+    "- Decide for each user message whether a tool is needed. Do not call tools "
+    'for ordinary general-knowledge questions (for example "What is RAG?" or '
+    '"Why use RAG?").\n'
+    "- Call search_documents when the user refers to their own documents, an "
+    "uploaded or provided file or PDF, a handbook, or asks to search or "
+    "summarize their documents. Leave namespace empty unless you know the exact "
+    "ingest namespace.\n"
+    "- Call search_notes or list_notes when the user refers to their saved, "
+    "personal notes.\n"
+    "- Call calculator for arithmetic instead of computing mentally.\n"
+    "- Use tool results as the source of truth for the final answer, and cite "
+    "document titles and sources (plus pages for PDFs).\n"
+    "- Never claim to have searched, read, or opened something unless the "
+    "matching tool was called. If a tool returns an error or no relevant "
+    "information, say so plainly instead of guessing."
 )
 
 
@@ -92,7 +105,7 @@ class ChatbotContainer:
             self.chatbot,
             self.thread_service,
             self.title_service,
-            settings.system_prompt + RAG_HINT,
+            settings.system_prompt + TOOL_GUIDANCE,
         )
 
     def close(self) -> None:

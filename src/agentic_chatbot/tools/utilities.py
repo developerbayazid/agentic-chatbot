@@ -146,7 +146,12 @@ def regex_search(pattern: str, text: str, max_results: int = 10) -> str:
 
 @tool
 def summarize_text(text: str, max_sentences: int = 3) -> str:
-    """Create a short extractive summary by keeping the first N sentences."""
+    """Create a short extractive summary of text provided in the conversation.
+
+    Use this only for text the user pasted or that is already in the messages.
+    To summarize an uploaded file or PDF, retrieve its content with
+    search_documents first, then summarize those results.
+    """
     if not text.strip():
         return "Error: text is empty."
 

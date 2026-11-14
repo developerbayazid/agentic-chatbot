@@ -34,7 +34,10 @@ def create_note_tools(repository: NotesRepository) -> list[BaseTool]:
 
     @tool
     def save_note(title: str, content: str, config: RunnableConfig) -> str:
-        """Save a note for the current conversation and return its note ID."""
+        """Save a note for the current conversation and return its note ID.
+
+        Use this when the user asks you to remember, save, or note something.
+        """
         thread_id = _thread_id(config)
         if thread_id is None:
             return _MISSING_CONTEXT
@@ -47,7 +50,10 @@ def create_note_tools(repository: NotesRepository) -> list[BaseTool]:
 
     @tool
     def list_notes(config: RunnableConfig) -> str:
-        """List the current conversation's notes with IDs, titles, and creation times."""
+        """List the current conversation's saved notes with IDs, titles, and times.
+
+        Use this when the user asks what notes they have or to show their notes.
+        """
         thread_id = _thread_id(config)
         if thread_id is None:
             return _MISSING_CONTEXT
@@ -57,7 +63,11 @@ def create_note_tools(repository: NotesRepository) -> list[BaseTool]:
 
     @tool
     def search_notes(query: str, config: RunnableConfig) -> str:
-        """Search the current conversation's notes by title or body."""
+        """Search the current conversation's saved notes by title or body.
+
+        Use this when the user asks to find, search, or recall something from
+        their notes.
+        """
         thread_id = _thread_id(config)
         if thread_id is None:
             return _MISSING_CONTEXT
@@ -72,7 +82,7 @@ def create_note_tools(repository: NotesRepository) -> list[BaseTool]:
 
     @tool
     def delete_note(note_id: str, config: RunnableConfig) -> str:
-        """Delete one of the current conversation's notes by its note ID."""
+        """Delete one of the current conversation's saved notes by its note ID."""
         thread_id = _thread_id(config)
         if thread_id is None:
             return _MISSING_CONTEXT

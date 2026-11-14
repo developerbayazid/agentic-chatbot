@@ -17,23 +17,41 @@ def create_document_tools(service: DocumentService) -> list[BaseTool]:
 
     @tool
     def search_documents(query: str, namespace: str = "", k: int = 4) -> str:
-        """Search the ingested knowledge base of Markdown, text, and PDF files.
+        """Search the user's ingested documents: Markdown, text, and PDF files.
 
-        Use this for questions about the user's documents, handbooks, notes, or
-        specifications. Leave namespace empty to search every namespace, or pass
-        one reported by list_documents. Cite the document title and source, and
-        the page number for PDF results.
+        Call this when the user refers to their own documents, an uploaded or
+        provided file or PDF, a handbook, or asks to search or summarize their
+        documents. Do not call it for general-knowledge questions. namespace
+        must be one of the values in the namespaces array returned by
+        list_documents, never a document title; leave it empty to search every
+        namespace. Cite the document title and source, and the page number for
+        PDF results.
         """
         if not query.strip():
             return "Error: query is required."
 
-        hits = service.search(query, namespace or None, k)
+        candidate = namespace.strip()
+        available = service.list_namespaces()
+
+        if candidate and candidate not in available:
+            return _to_json(
+                {
+                    "query": query,
+                    "namespace": candidate,
+                    "count": 0,
+                    "results": [],
+                    "error": "Unknown namespace.",
+                    "namespaces": available,
+                }
+            )
+
+        hits = service.search(query, candidate or None, k)
 
         if not hits:
             return _to_json(
                 {
                     "query": query,
-                    "namespace": namespace or None,
+                    "namespace": candidate or None,
                     "count": 0,
                     "results": [],
                     "message": "No matching documents were found.",
@@ -43,7 +61,7 @@ def create_document_tools(service: DocumentService) -> list[BaseTool]:
         return _to_json(
             {
                 "query": query,
-                "namespace": namespace or None,
+                "namespace": candidate or None,
                 "count": len(hits),
                 "results": [asdict(hit) for hit in hits],
             }
@@ -51,7 +69,11 @@ def create_document_tools(service: DocumentService) -> list[BaseTool]:
 
     @tool
     def list_documents(namespace: str = "") -> str:
-        """List ingested documents and the namespaces available for search."""
+        """List the user's ingested documents and namespaces available for search.
+
+        Use this when you need to know which documents or namespaces exist, or
+        when the user asks what documents are available.
+        """
         documents = service.list_documents(namespace or None)
 
         return _to_json(

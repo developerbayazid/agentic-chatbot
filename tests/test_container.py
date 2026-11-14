@@ -2,7 +2,7 @@ import sqlite3
 
 import pytest
 
-from agentic_chatbot.container import ChatbotContainer
+from agentic_chatbot.container import ChatbotContainer, TOOL_GUIDANCE
 from agentic_chatbot.repository import DocumentsRepository, NotesRepository
 from agentic_chatbot.services.chat_service import ChatService
 from agentic_chatbot.services.document_service import DocumentService
@@ -64,6 +64,14 @@ def test_container_thread_lifecycle(container):
 
     assert container.thread_service.delete_thread(thread.thread_id) is True
     assert container.thread_service.get_thread(thread.thread_id) is None
+
+
+def test_container_appends_tool_selection_guidance(container):
+    content = container.chat_service._system_message.content
+
+    assert TOOL_GUIDANCE in content
+    assert "search_documents" in content
+    assert "Never claim to have searched" in content
 
 
 def test_close_closes_connection(settings):

@@ -513,6 +513,12 @@ BAYAZID AI
 It is currently 27°C in Dhaka.
 ```
 
+Selection is intent-driven. The system prompt includes a tool-selection policy
+and each description states when it applies: general-knowledge questions are
+answered directly, while references to your documents, uploads, or saved notes
+require the matching tool. Empty results and tool errors are reported honestly
+instead of being guessed around.
+
 ### Registered tools (38)
 
 | Category            | Module         | Tools                                                                                                                                                                                                 |
@@ -590,6 +596,9 @@ Notes:
   there is no OCR.
 - `RAG_MIN_SCORE` (default `0.15`) filters weak hits so "nothing relevant" is a
   real answer instead of the nearest unrelated chunk.
+- A search `namespace` must be a value from `/documents` (the ingest namespace),
+  not a document title. An unknown namespace returns an error listing the valid
+  ones; omitting it searches everything.
 - Changing `EMBEDDINGS_MODEL` or `EMBEDDING_DIMENSIONS` invalidates existing
   indexes; re-ingest with `--force` after clearing `data/faiss/`.
 

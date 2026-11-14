@@ -212,7 +212,7 @@ class ChatbotContainer:
             self.chatbot,
             self.thread_service,
             self.title_service,
-            settings.system_prompt + RAG_HINT,
+            settings.system_prompt + TOOL_GUIDANCE,
         )
 
     def close(self) -> None:
@@ -235,7 +235,9 @@ class ChatbotContainer:
    5g. Build a tool-bound copy of the model (`bind_tools`).
 6. Compile the graph exactly once, passing the bound model and the tools.
 7. Wire the repository and services. The chat service receives the system
-   prompt plus a short retrieval hint.
+   prompt plus `TOOL_GUIDANCE`, a short tool-selection policy (when to use
+   documents, notes, and calculators, and how to report empty or failed tool
+   results).
 
 `build_container(settings=None)` is the public factory. The CLI uses it today; a
 FastAPI lifespan will use the same function later. Creating the graph once and
@@ -494,6 +496,12 @@ in `workflow.py`; no service or CLI code changes.
 All tools are `@tool`-decorated functions. Tools that need an external service
 return clear `"Error: ..."` strings instead of raising, so the model can recover.
 
+Tool selection is intent-driven, not forced: `container.py` appends
+`TOOL_GUIDANCE` to the system prompt and each description states when it should
+be used. General-knowledge questions are answered directly; references to the
+user's documents, uploads, or notes require the matching tool, and the model is
+told never to claim a search it did not perform.
+
 - `builtin.py` — core tools:
   - `calculator(expression)` — safe arithmetic (AST whitelist, no `eval`).
   - `get_current_time(timezone=None)` — ISO 8601 timestamp, optional IANA zone.
@@ -514,7 +522,10 @@ return clear `"Error: ..."` strings instead of raising, so the model can recover
   - `search_documents(query, namespace="", k=4)` — cosine search over the
     ingested knowledge base; returns JSON hits with `title`, `source`,
     `namespace`, `chunk_index`, `page`, `score`, and `content`. Blank queries and
-    no-hit results are plain strings, never exceptions.
+    no-hit results are plain strings, never exceptions. An unknown namespace
+    returns `"error": "Unknown namespace."` plus the valid `namespaces` list
+    instead of a silent empty result, and an empty namespace searches all of
+    them.
   - `list_documents(namespace="")` — known namespaces plus document metadata.
     Namespaces are chosen at ingest time, so the model can discover them here.
 - `mocks.py` — simulated implementations of common API-backed tools:

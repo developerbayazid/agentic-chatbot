@@ -49,7 +49,8 @@ def _evaluate(node: ast.AST) -> int | float:
 def calculator(expression: str) -> str:
     """Evaluate a basic arithmetic expression and return the result.
 
-    Supports numbers, parentheses, and the operators +, -, *, /, //, %, and **.
+    Use this for any arithmetic instead of computing mentally. Supports numbers,
+    parentheses, and the operators +, -, *, /, //, %, and **.
     """
     try:
         tree = ast.parse(expression, mode="eval")

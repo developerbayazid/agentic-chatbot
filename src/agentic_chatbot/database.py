@@ -1,11 +1,13 @@
 """SQLite connection and schema setup."""
 
 import sqlite3
+import threading
 
 THREADS_TABLE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS threads (
     thread_id TEXT PRIMARY KEY,
     title TEXT NOT NULL DEFAULT 'New chat',
+    owner_id TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
@@ -25,6 +27,14 @@ NOTES_THREAD_INDEX = """
 CREATE INDEX IF NOT EXISTS idx_notes_thread_id ON notes (thread_id)
 """
 
+THREADS_OWNER_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_threads_owner ON threads (owner_id)
+"""
+
+DOCUMENTS_OWNER_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_documents_owner ON documents (owner_id)
+"""
+
 DOCUMENTS_TABLE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS documents (
     doc_id TEXT PRIMARY KEY,
@@ -33,6 +43,7 @@ CREATE TABLE IF NOT EXISTS documents (
     title TEXT NOT NULL,
     content_hash TEXT NOT NULL,
     size_bytes INTEGER NOT NULL DEFAULT 0,
+    owner_id TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (namespace, source)
@@ -74,16 +85,44 @@ def create_connection(database_path: str) -> sqlite3.Connection:
     return connection
 
 
+_CONNECTION_LOCKS: dict[int, threading.RLock] = {}
+_CONNECTION_LOCKS_GUARD = threading.Lock()
+
+
+def connection_lock(connection: sqlite3.Connection) -> threading.RLock:
+    """Return the lock that serializes access to one connection.
+
+    Every repository on a connection shares one cursor *and* one transaction, so
+    the lock has to be keyed to the connection rather than to each repository.
+    Two repositories holding separate locks would let one thread commit another
+    thread's half-built transaction.
+    """
+    key = id(connection)
+
+    with _CONNECTION_LOCKS_GUARD:
+        lock = _CONNECTION_LOCKS.get(key)
+
+        if lock is None:
+            lock = threading.RLock()
+            _CONNECTION_LOCKS[key] = lock
+
+        return lock
+
+
 def init_schema(
     connection: sqlite3.Connection,
     *,
     embedding_dimensions: int = 1536,
 ) -> None:
     connection.execute(THREADS_TABLE_SCHEMA)
+    _migrate_threads_owner_id(connection)
+    connection.execute(THREADS_OWNER_INDEX)
     connection.execute(NOTES_TABLE_SCHEMA)
     _migrate_notes_thread_id(connection)
     connection.execute(NOTES_THREAD_INDEX)
     connection.execute(DOCUMENTS_TABLE_SCHEMA)
+    _migrate_documents_owner_id(connection)
+    connection.execute(DOCUMENTS_OWNER_INDEX)
     connection.execute(DOCUMENT_CHUNKS_TABLE_SCHEMA)
     connection.executescript(DOCUMENT_CHUNKS_INDEXES)
     connection.execute(RAG_META_TABLE_SCHEMA)
@@ -138,3 +177,25 @@ def _migrate_notes_thread_id(connection: sqlite3.Connection) -> None:
         connection.execute(
             "ALTER TABLE notes ADD COLUMN thread_id TEXT NOT NULL DEFAULT ''"
         )
+
+
+def _add_owner_column(connection: sqlite3.Connection, table: str) -> None:
+    """Add a nullable owner_id to a table created before owners existed.
+
+    NULL means "no owner": CLI-created threads and pre-API documents stay
+    visible to the local operator and to nobody through the REST API.
+    """
+    columns = {
+        row[1] for row in connection.execute(f"PRAGMA table_info({table})")
+    }
+
+    if "owner_id" not in columns:
+        connection.execute(f"ALTER TABLE {table} ADD COLUMN owner_id TEXT")
+
+
+def _migrate_threads_owner_id(connection: sqlite3.Connection) -> None:
+    _add_owner_column(connection, "threads")
+
+
+def _migrate_documents_owner_id(connection: sqlite3.Connection) -> None:
+    _add_owner_column(connection, "documents")

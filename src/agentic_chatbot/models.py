@@ -10,6 +10,7 @@ class Thread:
     title: str
     created_at: str | None
     updated_at: str | None
+    owner_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -37,6 +38,7 @@ class Document:
     size_bytes: int
     created_at: str | None
     updated_at: str | None
+    owner_id: str | None = None
 
 
 @dataclass(frozen=True)

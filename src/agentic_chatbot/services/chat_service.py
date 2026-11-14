@@ -43,15 +43,27 @@ class ChatService:
 
         return f"{self._system_message.content}\n\n{context}"
 
-    def get_config(self, thread_id: str) -> dict[str, Any]:
-        return {"configurable": {"thread_id": thread_id}}
+    def get_config(
+        self, thread_id: str, owner_id: str | None = None
+    ) -> dict[str, Any]:
+        configurable: dict[str, Any] = {"thread_id": thread_id}
+
+        if owner_id is not None:
+            configurable["rag_owner_id"] = owner_id
+
+        return {"configurable": configurable}
 
     def get_messages(self, thread_id: str) -> list[BaseMessage]:
         state = self._chatbot.get_state(self.get_config(thread_id))
         return state.values.get("messages", [])
 
-    def stream_turn(self, thread_id: str, user_message: str) -> Iterator[TurnEvent]:
-        config = self.get_config(thread_id)
+    def stream_turn(
+        self,
+        thread_id: str,
+        user_message: str,
+        owner_id: str | None = None,
+    ) -> Iterator[TurnEvent]:
+        config = self.get_config(thread_id, owner_id)
 
         is_first_message = len(self.get_messages(thread_id)) == 0
 
@@ -79,9 +91,14 @@ class ChatService:
             self._thread_service.touch_thread(thread_id)
             yield TurnEvent(type="done")
 
-    def resume_turn(self, thread_id: str, decision: dict) -> Iterator[TurnEvent]:
+    def resume_turn(
+        self,
+        thread_id: str,
+        decision: dict,
+        owner_id: str | None = None,
+    ) -> Iterator[TurnEvent]:
         """Continue a graph run that paused on an approval interrupt."""
-        config = self.get_config(thread_id)
+        config = self.get_config(thread_id, owner_id)
 
         for chunk in self._chatbot.stream(
             Command(resume=decision),
@@ -94,14 +111,16 @@ class ChatService:
         self._thread_service.touch_thread(thread_id)
         yield TurnEvent(type="done")
 
-    def get_pending_interrupt(self, thread_id: str) -> dict | None:
+    def get_pending_interrupt(
+        self, thread_id: str, owner_id: str | None = None
+    ) -> dict | None:
         """Return the pending interrupt for a thread, or ``None``.
 
         Reading graph state does not resume anything, so this is safe to call on
         startup to restore a pending approval after a process restart.
         """
         try:
-            state = self._chatbot.get_state(self.get_config(thread_id))
+            state = self._chatbot.get_state(self.get_config(thread_id, owner_id))
         except Exception:  # noqa: BLE001 - an unknown thread simply has no interrupt
             return None
 

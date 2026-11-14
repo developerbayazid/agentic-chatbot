@@ -1,8 +1,15 @@
-"""Tools for searching the ingested document knowledge base."""
+"""Tools for searching the ingested document knowledge base.
+
+Retrieval is scoped to the authenticated user. The identity arrives through the
+LangGraph run config (``configurable["rag_owner_id"]``) exactly like the notes
+tools; it is never an argument, so the model cannot choose whose documents it
+reads.
+"""
 
 import json
 from dataclasses import asdict
 
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool, tool
 
 from agentic_chatbot.services.document_service import (
@@ -15,11 +22,23 @@ def _to_json(payload: dict) -> str:
     return json.dumps(payload, indent=2, ensure_ascii=False)
 
 
+def _owner_id(config: RunnableConfig | None) -> str | None:
+    if not config:
+        return None
+
+    configurable = config.get("configurable") or {}
+    owner_id = configurable.get("rag_owner_id")
+
+    return str(owner_id) if owner_id else None
+
+
 def create_document_tools(service: DocumentService) -> list[BaseTool]:
     """Build the retrieval tools bound to a document service."""
 
     @tool
-    def search_documents(query: str, namespace: str = "", k: int = 4) -> str:
+    def search_documents(
+        query: str, namespace: str = "", k: int = 4, config: RunnableConfig = None
+    ) -> str:
         """Search the user's ingested documents: Markdown, text, and PDF files.
 
         Call this when the user refers to their own documents, an uploaded or
@@ -37,8 +56,9 @@ def create_document_tools(service: DocumentService) -> list[BaseTool]:
         if not query.strip():
             return "Error: query is required."
 
+        owner_id = _owner_id(config)
         candidate = namespace.strip()
-        available = service.list_namespaces()
+        available = service.list_namespaces(owner_id=owner_id)
 
         if candidate and candidate not in available:
             return _to_json(
@@ -53,7 +73,7 @@ def create_document_tools(service: DocumentService) -> list[BaseTool]:
             )
 
         try:
-            hits = service.search(query, candidate or None, k)
+            hits = service.search(query, candidate or None, k, owner_id=owner_id)
         except RetrievalError as exc:
             return _to_json(
                 {
@@ -86,17 +106,19 @@ def create_document_tools(service: DocumentService) -> list[BaseTool]:
         )
 
     @tool
-    def list_documents(namespace: str = "") -> str:
+    def list_documents(namespace: str = "", config: RunnableConfig = None) -> str:
         """List the user's ingested documents and namespaces available for search.
 
         Use this when you need to know which documents or namespaces exist, or
         when the user asks what documents are available.
         """
-        documents = service.list_documents(namespace or None)
+        owner_id = _owner_id(config)
+
+        documents = service.list_documents(namespace or None, owner_id=owner_id)
 
         return _to_json(
             {
-                "namespaces": service.list_namespaces(),
+                "namespaces": service.list_namespaces(owner_id=owner_id),
                 "count": len(documents),
                 "documents": [
                     {

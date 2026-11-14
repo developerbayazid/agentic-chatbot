@@ -1,15 +1,22 @@
-"""SQLite repositories for thread metadata and notes."""
+"""SQLite repositories for thread metadata and notes.
+
+All three repositories share one connection, one cursor, and one transaction,
+so they also share one lock (``database.connection_lock``). Holding a lock per
+repository would not protect anything: a commit in one thread would still
+commit another thread's open transaction.
+"""
 
 import sqlite3
 import uuid
 from collections.abc import Sequence
 
+from agentic_chatbot.database import connection_lock
 from agentic_chatbot.models import Chunk, Document, Note, Thread
 
-_SELECT_COLUMNS = "thread_id, title, created_at, updated_at"
+_SELECT_COLUMNS = "thread_id, title, owner_id, created_at, updated_at"
 _NOTE_COLUMNS = "note_id, thread_id, title, content, created_at"
 _DOCUMENT_COLUMNS = (
-    "doc_id, namespace, source, title, content_hash, size_bytes, "
+    "doc_id, namespace, source, title, content_hash, size_bytes, owner_id, "
     "created_at, updated_at"
 )
 
@@ -20,6 +27,7 @@ def _to_thread(row: sqlite3.Row) -> Thread:
         title=row["title"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+        owner_id=row["owner_id"],
     )
 
 
@@ -27,68 +35,89 @@ class ThreadRepository:
     def __init__(self, connection: sqlite3.Connection):
         self._connection = connection
         self._cursor = connection.cursor()
+        self._lock = connection_lock(connection)
 
-    def create(self, title: str = "New chat") -> Thread:
-        thread_id = str(uuid.uuid4())
-        self._cursor.execute(
-            "INSERT INTO threads (thread_id, title) VALUES (?, ?)",
-            (thread_id, title),
-        )
-        self._connection.commit()
-        return self.get(thread_id)
+    def create(self, title: str = "New chat", owner_id: str | None = None) -> Thread:
+        with self._lock:
+            thread_id = str(uuid.uuid4())
+            self._cursor.execute(
+                "INSERT INTO threads (thread_id, title, owner_id) "
+                "VALUES (?, ?, ?)",
+                (thread_id, title, owner_id),
+            )
+            self._connection.commit()
+            return self.get(thread_id)
 
     def get(self, thread_id: str) -> Thread | None:
-        row = self._cursor.execute(
-            f"SELECT {_SELECT_COLUMNS} FROM threads WHERE thread_id = ?",
-            (thread_id,),
-        ).fetchone()
-        return _to_thread(row) if row else None
+        with self._lock:
+            row = self._cursor.execute(
+                f"SELECT {_SELECT_COLUMNS} FROM threads WHERE thread_id = ?",
+                (thread_id,),
+            ).fetchone()
+            return _to_thread(row) if row else None
 
-    def list_all(self) -> list[Thread]:
-        rows = self._cursor.execute(
-            f"""
-            SELECT {_SELECT_COLUMNS}
-            FROM threads
-            ORDER BY updated_at DESC, created_at DESC
-            """
-        ).fetchall()
-        return [_to_thread(row) for row in rows]
+    def list_all(self, owner_id: str | None = None) -> list[Thread]:
+        with self._lock:
+            if owner_id is None:
+                rows = self._cursor.execute(
+                    f"""
+                    SELECT {_SELECT_COLUMNS}
+                    FROM threads
+                    ORDER BY updated_at DESC, created_at DESC
+                    """
+                ).fetchall()
+            else:
+                rows = self._cursor.execute(
+                    f"""
+                    SELECT {_SELECT_COLUMNS}
+                    FROM threads
+                    WHERE owner_id = ?
+                    ORDER BY updated_at DESC, created_at DESC
+                    """,
+                    (owner_id,),
+                ).fetchall()
+
+            return [_to_thread(row) for row in rows]
 
     def exists(self, thread_id: str) -> bool:
-        row = self._cursor.execute(
-            "SELECT 1 FROM threads WHERE thread_id = ?",
-            (thread_id,),
-        ).fetchone()
-        return row is not None
+        with self._lock:
+            row = self._cursor.execute(
+                "SELECT 1 FROM threads WHERE thread_id = ?",
+                (thread_id,),
+            ).fetchone()
+            return row is not None
 
     def update_title(self, thread_id: str, title: str) -> None:
-        self._cursor.execute(
-            """
-            UPDATE threads
-            SET title = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE thread_id = ?
-            """,
-            (title, thread_id),
-        )
-        self._connection.commit()
+        with self._lock:
+            self._cursor.execute(
+                """
+                UPDATE threads
+                SET title = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE thread_id = ?
+                """,
+                (title, thread_id),
+            )
+            self._connection.commit()
 
     def touch(self, thread_id: str) -> None:
-        self._cursor.execute(
-            """
-            UPDATE threads
-            SET updated_at = CURRENT_TIMESTAMP
-            WHERE thread_id = ?
-            """,
-            (thread_id,),
-        )
-        self._connection.commit()
+        with self._lock:
+            self._cursor.execute(
+                """
+                UPDATE threads
+                SET updated_at = CURRENT_TIMESTAMP
+                WHERE thread_id = ?
+                """,
+                (thread_id,),
+            )
+            self._connection.commit()
 
     def delete(self, thread_id: str) -> None:
-        self._cursor.execute(
-            "DELETE FROM threads WHERE thread_id = ?",
-            (thread_id,),
-        )
-        self._connection.commit()
+        with self._lock:
+            self._cursor.execute(
+                "DELETE FROM threads WHERE thread_id = ?",
+                (thread_id,),
+            )
+            self._connection.commit()
 
 
 def _to_note(row: sqlite3.Row) -> Note:
@@ -105,62 +134,68 @@ class NotesRepository:
     def __init__(self, connection: sqlite3.Connection):
         self._connection = connection
         self._cursor = connection.cursor()
+        self._lock = connection_lock(connection)
 
     def create(self, thread_id: str, title: str, content: str) -> Note:
-        note_id = str(uuid.uuid4())
-        self._cursor.execute(
-            """
-            INSERT INTO notes (note_id, thread_id, title, content)
-            VALUES (?, ?, ?, ?)
-            """,
-            (note_id, thread_id, title, content),
-        )
-        self._connection.commit()
-        return self.get(thread_id, note_id)
+        with self._lock:
+            note_id = str(uuid.uuid4())
+            self._cursor.execute(
+                """
+                INSERT INTO notes (note_id, thread_id, title, content)
+                VALUES (?, ?, ?, ?)
+                """,
+                (note_id, thread_id, title, content),
+            )
+            self._connection.commit()
+            return self.get(thread_id, note_id)
 
     def get(self, thread_id: str, note_id: str) -> Note | None:
-        row = self._cursor.execute(
-            f"""
-            SELECT {_NOTE_COLUMNS}
-            FROM notes
-            WHERE thread_id = ? AND note_id = ?
-            """,
-            (thread_id, note_id),
-        ).fetchone()
-        return _to_note(row) if row else None
+        with self._lock:
+            row = self._cursor.execute(
+                f"""
+                SELECT {_NOTE_COLUMNS}
+                FROM notes
+                WHERE thread_id = ? AND note_id = ?
+                """,
+                (thread_id, note_id),
+            ).fetchone()
+            return _to_note(row) if row else None
 
     def list_all(self, thread_id: str) -> list[Note]:
-        rows = self._cursor.execute(
-            f"""
-            SELECT {_NOTE_COLUMNS}
-            FROM notes
-            WHERE thread_id = ?
-            ORDER BY created_at ASC, note_id ASC
-            """,
-            (thread_id,),
-        ).fetchall()
-        return [_to_note(row) for row in rows]
+        with self._lock:
+            rows = self._cursor.execute(
+                f"""
+                SELECT {_NOTE_COLUMNS}
+                FROM notes
+                WHERE thread_id = ?
+                ORDER BY created_at ASC, note_id ASC
+                """,
+                (thread_id,),
+            ).fetchall()
+            return [_to_note(row) for row in rows]
 
     def search(self, thread_id: str, query: str) -> list[Note]:
-        pattern = f"%{query}%"
-        rows = self._cursor.execute(
-            f"""
-            SELECT {_NOTE_COLUMNS}
-            FROM notes
-            WHERE thread_id = ? AND (title LIKE ? OR content LIKE ?)
-            ORDER BY created_at ASC, note_id ASC
-            """,
-            (thread_id, pattern, pattern),
-        ).fetchall()
-        return [_to_note(row) for row in rows]
+        with self._lock:
+            pattern = f"%{query}%"
+            rows = self._cursor.execute(
+                f"""
+                SELECT {_NOTE_COLUMNS}
+                FROM notes
+                WHERE thread_id = ? AND (title LIKE ? OR content LIKE ?)
+                ORDER BY created_at ASC, note_id ASC
+                """,
+                (thread_id, pattern, pattern),
+            ).fetchall()
+            return [_to_note(row) for row in rows]
 
     def delete(self, thread_id: str, note_id: str) -> bool:
-        self._cursor.execute(
-            "DELETE FROM notes WHERE thread_id = ? AND note_id = ?",
-            (thread_id, note_id),
-        )
-        self._connection.commit()
-        return self._cursor.rowcount > 0
+        with self._lock:
+            self._cursor.execute(
+                "DELETE FROM notes WHERE thread_id = ? AND note_id = ?",
+                (thread_id, note_id),
+            )
+            self._connection.commit()
+            return self._cursor.rowcount > 0
 
 
 def _to_document(row: sqlite3.Row) -> Document:
@@ -173,6 +208,7 @@ def _to_document(row: sqlite3.Row) -> Document:
         size_bytes=row["size_bytes"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+        owner_id=row["owner_id"],
     )
 
 
@@ -186,52 +222,104 @@ class DocumentsRepository:
     def __init__(self, connection: sqlite3.Connection):
         self._connection = connection
         self._cursor = connection.cursor()
+        self._lock = connection_lock(connection)
 
     def get(self, doc_id: str) -> Document | None:
-        row = self._cursor.execute(
-            f"SELECT {_DOCUMENT_COLUMNS} FROM documents WHERE doc_id = ?",
-            (doc_id,),
-        ).fetchone()
-        return _to_document(row) if row else None
+        with self._lock:
+            row = self._cursor.execute(
+                f"SELECT {_DOCUMENT_COLUMNS} FROM documents WHERE doc_id = ?",
+                (doc_id,),
+            ).fetchone()
+            return _to_document(row) if row else None
 
-    def find_by_source(self, namespace: str, source: str) -> Document | None:
-        row = self._cursor.execute(
-            f"""
-            SELECT {_DOCUMENT_COLUMNS}
-            FROM documents
-            WHERE namespace = ? AND source = ?
-            """,
-            (namespace, source),
-        ).fetchone()
-        return _to_document(row) if row else None
-
-    def list_documents(self, namespace: str | None = None) -> list[Document]:
-        if namespace is None:
-            rows = self._cursor.execute(
+    def find_by_source(
+        self, namespace: str, source: str
+    ) -> Document | None:
+        with self._lock:
+            row = self._cursor.execute(
                 f"""
                 SELECT {_DOCUMENT_COLUMNS}
                 FROM documents
-                ORDER BY namespace ASC, source ASC
-                """
-            ).fetchall()
-        else:
-            rows = self._cursor.execute(
-                f"""
-                SELECT {_DOCUMENT_COLUMNS}
-                FROM documents
-                WHERE namespace = ?
-                ORDER BY source ASC
+                WHERE namespace = ? AND source = ?
                 """,
-                (namespace,),
+                (namespace, source),
+            ).fetchone()
+            return _to_document(row) if row else None
+
+    def list_documents(
+        self, namespace: str | None = None, owner_id: str | None = None
+    ) -> list[Document]:
+        clauses: list[str] = []
+        parameters: list[str] = []
+
+        if namespace is not None:
+            clauses.append("namespace = ?")
+            parameters.append(namespace)
+
+        if owner_id is not None:
+            clauses.append("owner_id = ?")
+            parameters.append(owner_id)
+
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+
+        with self._lock:
+            rows = self._cursor.execute(
+                f"""
+                SELECT {_DOCUMENT_COLUMNS}
+                FROM documents
+                {where}
+                ORDER BY namespace ASC, source ASC
+                """,
+                tuple(parameters),
             ).fetchall()
 
-        return [_to_document(row) for row in rows]
+            return [_to_document(row) for row in rows]
 
-    def list_namespaces(self) -> list[str]:
-        rows = self._cursor.execute(
-            "SELECT DISTINCT namespace FROM documents ORDER BY namespace"
-        ).fetchall()
-        return [row[0] for row in rows]
+    def list_namespaces(self, owner_id: str | None = None) -> list[str]:
+        with self._lock:
+            if owner_id is None:
+                rows = self._cursor.execute(
+                    "SELECT DISTINCT namespace FROM documents ORDER BY namespace"
+                ).fetchall()
+            else:
+                rows = self._cursor.execute(
+                    """
+                    SELECT DISTINCT namespace
+                    FROM documents
+                    WHERE owner_id = ?
+                    ORDER BY namespace
+                    """,
+                    (owner_id,),
+                ).fetchall()
+
+            return [row[0] for row in rows]
+
+    def authorized_chunk_ids(
+        self, owner_id: str, namespaces: Sequence[str]
+    ) -> set[int]:
+        """Row ids in ``namespaces`` that belong to ``owner_id``.
+
+        Retrieval filters its candidate rankings with this set *before* fusing
+        them, so another user's chunk can neither be returned nor influence the
+        order of an authorized one.
+        """
+        if not namespaces:
+            return set()
+
+        placeholders = ", ".join("?" for _ in namespaces)
+
+        with self._lock:
+            rows = self._cursor.execute(
+                f"""
+                SELECT c.row_id
+                FROM document_chunks c
+                JOIN documents d ON d.doc_id = c.doc_id
+                WHERE d.owner_id = ? AND c.namespace IN ({placeholders})
+                """,
+                (owner_id, *namespaces),
+            ).fetchall()
+
+            return {int(row[0]) for row in rows}
 
     def replace_document(
         self,
@@ -241,101 +329,106 @@ class DocumentsRepository:
         content_hash: str,
         size_bytes: int,
         chunks: Sequence[Chunk],
+        owner_id: str | None = None,
     ) -> tuple[Document, list[int]]:
-        existing = self.find_by_source(namespace, source)
+        with self._lock:
+            existing = self.find_by_source(namespace, source)
 
-        try:
-            if existing is None:
-                doc_id = str(uuid.uuid4())
-                self._cursor.execute(
-                    """
-                    INSERT INTO documents
-                        (doc_id, namespace, source, title, content_hash,
-                         size_bytes)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        doc_id,
-                        namespace,
-                        source,
-                        title,
-                        content_hash,
-                        size_bytes,
-                    ),
-                )
-            else:
-                doc_id = existing.doc_id
-                self._cursor.execute(
-                    """
-                    UPDATE documents
-                    SET title = ?, content_hash = ?, size_bytes = ?,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE doc_id = ?
-                    """,
-                    (title, content_hash, size_bytes, doc_id),
-                )
-                self._cursor.execute(
-                    "DELETE FROM document_chunks WHERE doc_id = ?",
-                    (doc_id,),
-                )
+            try:
+                if existing is None:
+                    doc_id = str(uuid.uuid4())
+                    self._cursor.execute(
+                        """
+                        INSERT INTO documents
+                            (doc_id, namespace, source, title, content_hash,
+                             size_bytes, owner_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            doc_id,
+                            namespace,
+                            source,
+                            title,
+                            content_hash,
+                            size_bytes,
+                            owner_id,
+                        ),
+                    )
+                else:
+                    doc_id = existing.doc_id
+                    self._cursor.execute(
+                        """
+                        UPDATE documents
+                        SET title = ?, content_hash = ?, size_bytes = ?,
+                            owner_id = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE doc_id = ?
+                        """,
+                        (title, content_hash, size_bytes, owner_id, doc_id),
+                    )
+                    self._cursor.execute(
+                        "DELETE FROM document_chunks WHERE doc_id = ?",
+                        (doc_id,),
+                    )
 
-            row_ids: list[int] = []
+                row_ids: list[int] = []
 
-            for index, chunk in enumerate(chunks):
-                self._cursor.execute(
-                    """
-                    INSERT INTO document_chunks
-                        (chunk_id, doc_id, namespace, chunk_index, page,
-                         content)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        str(uuid.uuid4()),
-                        doc_id,
-                        namespace,
-                        index,
-                        chunk.page,
-                        chunk.content,
-                    ),
-                )
-                row_ids.append(int(self._cursor.lastrowid))
+                for index, chunk in enumerate(chunks):
+                    self._cursor.execute(
+                        """
+                        INSERT INTO document_chunks
+                            (chunk_id, doc_id, namespace, chunk_index, page,
+                             content)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            str(uuid.uuid4()),
+                            doc_id,
+                            namespace,
+                            index,
+                            chunk.page,
+                            chunk.content,
+                        ),
+                    )
+                    row_ids.append(int(self._cursor.lastrowid))
 
-            self._connection.commit()
-        except Exception:
-            self._connection.rollback()
-            raise
+                self._connection.commit()
+            except Exception:
+                self._connection.rollback()
+                raise
 
-        document = self.get(doc_id)
+            document = self.get(doc_id)
 
-        if document is None:  # pragma: no cover - guarded by the transaction
-            raise RuntimeError("document disappeared during replace")
+            if document is None:  # pragma: no cover - guarded by the transaction
+                raise RuntimeError("document disappeared during replace")
 
-        return document, row_ids
+            return document, row_ids
 
     def chunk_ids(self, doc_id: str) -> list[int]:
-        rows = self._cursor.execute(
-            """
-            SELECT row_id
-            FROM document_chunks
-            WHERE doc_id = ?
-            ORDER BY chunk_index ASC
-            """,
-            (doc_id,),
-        ).fetchall()
-        return [int(row[0]) for row in rows]
+        with self._lock:
+            rows = self._cursor.execute(
+                """
+                SELECT row_id
+                FROM document_chunks
+                WHERE doc_id = ?
+                ORDER BY chunk_index ASC
+                """,
+                (doc_id,),
+            ).fetchall()
+            return [int(row[0]) for row in rows]
 
     def list_chunks(self, namespace: str) -> list[tuple[int, str]]:
         """Return ``(row_id, content)`` for every chunk in one namespace."""
-        rows = self._cursor.execute(
-            """
-            SELECT row_id, content
-            FROM document_chunks
-            WHERE namespace = ?
-            ORDER BY row_id ASC
-            """,
-            (namespace,),
-        ).fetchall()
-        return [(int(row[0]), row[1]) for row in rows]
+        with self._lock:
+            rows = self._cursor.execute(
+                """
+                SELECT row_id, content
+                FROM document_chunks
+                WHERE namespace = ?
+                ORDER BY row_id ASC
+                """,
+                (namespace,),
+            ).fetchall()
+            return [(int(row[0]), row[1]) for row in rows]
 
     def chunks_fingerprint(self, namespace: str) -> tuple[int, int, int]:
         """Cheap signature of a namespace's chunks used to detect staleness.
@@ -344,15 +437,16 @@ class DocumentsRepository:
         auto-increment, so a re-ingest always raises the maximum (and usually the
         count or the sum), and a deletion lowers the count.
         """
-        row = self._cursor.execute(
-            """
-            SELECT COUNT(*), COALESCE(MAX(row_id), 0), COALESCE(SUM(row_id), 0)
-            FROM document_chunks
-            WHERE namespace = ?
-            """,
-            (namespace,),
-        ).fetchone()
-        return (int(row[0]), int(row[1]), int(row[2]))
+        with self._lock:
+            row = self._cursor.execute(
+                """
+                SELECT COUNT(*), COALESCE(MAX(row_id), 0), COALESCE(SUM(row_id), 0)
+                FROM document_chunks
+                WHERE namespace = ?
+                """,
+                (namespace,),
+            ).fetchone()
+            return (int(row[0]), int(row[1]), int(row[2]))
 
     def chunks_by_ids(
         self, row_ids: Sequence[int]
@@ -361,45 +455,49 @@ class DocumentsRepository:
             return {}
 
         placeholders = ", ".join("?" for _ in row_ids)
-        rows = self._cursor.execute(
-            f"""
-            SELECT c.row_id AS row_id, c.chunk_id AS chunk_id,
-                   c.doc_id AS doc_id, c.namespace AS namespace,
-                   c.chunk_index AS chunk_index, c.page AS page,
-                   c.content AS content, d.title AS title, d.source AS source
-            FROM document_chunks c
-            JOIN documents d ON d.doc_id = c.doc_id
-            WHERE c.row_id IN ({placeholders})
-            """,
-            tuple(row_ids),
-        ).fetchall()
-        return {int(row["row_id"]): row for row in rows}
+
+        with self._lock:
+            rows = self._cursor.execute(
+                f"""
+                SELECT c.row_id AS row_id, c.chunk_id AS chunk_id,
+                       c.doc_id AS doc_id, c.namespace AS namespace,
+                       c.chunk_index AS chunk_index, c.page AS page,
+                       c.content AS content, d.title AS title, d.source AS source
+                FROM document_chunks c
+                JOIN documents d ON d.doc_id = c.doc_id
+                WHERE c.row_id IN ({placeholders})
+                """,
+                tuple(row_ids),
+            ).fetchall()
+            return {int(row["row_id"]): row for row in rows}
 
     def delete_document(self, doc_id: str) -> bool:
-        self._cursor.execute(
-            "DELETE FROM document_chunks WHERE doc_id = ?",
-            (doc_id,),
-        )
-        self._cursor.execute(
-            "DELETE FROM documents WHERE doc_id = ?",
-            (doc_id,),
-        )
-        self._connection.commit()
-        return self._cursor.rowcount > 0
+        with self._lock:
+            self._cursor.execute(
+                "DELETE FROM document_chunks WHERE doc_id = ?",
+                (doc_id,),
+            )
+            self._cursor.execute(
+                "DELETE FROM documents WHERE doc_id = ?",
+                (doc_id,),
+            )
+            self._connection.commit()
+            return self._cursor.rowcount > 0
 
     def stats(self) -> dict[str, int]:
-        documents = self._cursor.execute(
-            "SELECT COUNT(*) FROM documents"
-        ).fetchone()[0]
-        chunks = self._cursor.execute(
-            "SELECT COUNT(*) FROM document_chunks"
-        ).fetchone()[0]
-        namespaces = self._cursor.execute(
-            "SELECT COUNT(DISTINCT namespace) FROM documents"
-        ).fetchone()[0]
+        with self._lock:
+            documents = self._cursor.execute(
+                "SELECT COUNT(*) FROM documents"
+            ).fetchone()[0]
+            chunks = self._cursor.execute(
+                "SELECT COUNT(*) FROM document_chunks"
+            ).fetchone()[0]
+            namespaces = self._cursor.execute(
+                "SELECT COUNT(DISTINCT namespace) FROM documents"
+            ).fetchone()[0]
 
-        return {
-            "documents": int(documents),
-            "chunks": int(chunks),
-            "namespaces": int(namespaces),
-        }
+            return {
+                "documents": int(documents),
+                "chunks": int(chunks),
+                "namespaces": int(namespaces),
+            }

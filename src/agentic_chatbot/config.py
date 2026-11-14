@@ -48,6 +48,18 @@ class Settings(BaseSettings):
     langsmith_project: str = "agentic-chatbot"
     langsmith_endpoint: str | None = None
 
+    # REST API
+    api_env: Literal["development", "production"] = "development"
+    api_host: str = "127.0.0.1"
+    api_port: int = 8000
+    api_upload_path: str = "data/uploads"
+    api_max_upload_bytes: int = 20_000_000
+    api_keys: str = ""
+    jwt_secret_key: str | None = None
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 30
+    cors_origins: str = "http://localhost:3000"
+
 
 def export_langsmith_env(settings: Settings) -> None:
     """Propagate LangSmith settings to the process environment.
@@ -64,6 +76,38 @@ def export_langsmith_env(settings: Settings) -> None:
         os.environ.setdefault("LANGSMITH_PROJECT", settings.langsmith_project)
     if settings.langsmith_endpoint:
         os.environ.setdefault("LANGSMITH_ENDPOINT", settings.langsmith_endpoint)
+
+
+def parse_api_keys(raw: str) -> dict[str, str]:
+    """Parse ``name=secret,name=secret`` into a mapping.
+
+    Blank entries are ignored; an entry without ``=`` is skipped rather than
+    crashing startup, because an empty ``API_KEYS`` must simply mean "no keys".
+    """
+    keys: dict[str, str] = {}
+
+    for entry in raw.split(","):
+        name, separator, secret = entry.partition("=")
+        name = name.strip()
+        secret = secret.strip()
+
+        if separator and name and secret:
+            keys[name] = secret
+
+    return keys
+
+
+def parse_cors_origins(raw: str) -> list[str]:
+    """Parse a comma-separated origin list into explicit origins."""
+    origins: list[str] = []
+
+    for entry in raw.split(","):
+        origin = entry.strip()
+
+        if origin and origin not in origins:
+            origins.append(origin)
+
+    return origins
 
 
 def get_settings() -> Settings:

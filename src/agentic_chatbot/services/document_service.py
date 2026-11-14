@@ -33,6 +33,12 @@ _SEPARATORS = ["\n## ", "\n### ", "\n\n", "\n", ". ", " "]
 _EMBED_BATCH = 64
 _MAX_TOP_K = 10
 
+# Filtering a ranking down to one owner's chunks can shrink a candidate list
+# below the requested Top-K, so owner-scoped queries ask each retriever for
+# proportionally more. The cap keeps a pathological over-fetch bounded.
+_OWNER_OVERFETCH = 4
+_MAX_OWNER_CANDIDATES = 100
+
 
 class RetrievalError(Exception):
     """Raised when no retriever could produce results for a query."""
@@ -100,6 +106,7 @@ class DocumentService:
         path: Path,
         namespace: str | None = None,
         force: bool = False,
+        owner_id: str | None = None,
     ) -> IngestResult:
         namespace = self._namespace(namespace)
         path = Path(path)
@@ -122,7 +129,7 @@ class DocumentService:
 
             try:
                 chunks_created, skipped, warning = self.ingest_file(
-                    file, namespace, force=force
+                    file, namespace, force=force, owner_id=owner_id
                 )
             except DocumentLoadError as exc:
                 result.errors.append((self._source(file), str(exc)))
@@ -148,6 +155,7 @@ class DocumentService:
         path: Path,
         namespace: str,
         force: bool = False,
+        owner_id: str | None = None,
     ) -> tuple[int, bool, str | None]:
         """Index one file.
 
@@ -209,6 +217,7 @@ class DocumentService:
             content_hash,
             size_bytes,
             chunks,
+            owner_id=owner_id,
         )
 
         try:
@@ -233,53 +242,71 @@ class DocumentService:
         query: str,
         namespace: str | None = None,
         k: int | None = None,
+        owner_id: str | None = None,
     ) -> list[DocumentHit]:
-        """Retrieve chunks using the configured search mode."""
+        """Retrieve chunks using the configured search mode.
+
+        ``owner_id`` scopes retrieval to that user's documents. The filter runs
+        inside both retrievers, before fusion, so a foreign chunk can neither be
+        returned nor influence the order of an authorized one. ``None`` keeps the
+        CLI's global behaviour.
+        """
         if not query.strip():
             return []
 
         limit = self._clamp_k(k)
-        namespaces = self._search_namespaces(namespace)
+        namespaces = self._search_namespaces(namespace, owner_id)
 
         if not namespaces:
             return []
 
+        allowed = self._allowed_ids(owner_id, namespaces)
+        candidates = self._candidates(limit, allowed is not None)
         mode = self._search_mode
 
         if mode == "vector":
-            ranked, vector_scores = self._retrieve_vector(
-                query, namespaces, limit
+            ranked, vector_scores = self._rank_vector(
+                query, namespaces, candidates, allowed
             )
             return self._build_hits(
-                ranked, vector_scores, None, filter_min_score=True
+                ranked[:limit],
+                vector_scores,
+                None,
+                filter_min_score=True,
             )
 
         if mode == "bm25":
-            ranked, bm25_scores = self._retrieve_bm25(query, namespaces, limit)
-            return self._build_hits(ranked, None, bm25_scores)
+            ranked, bm25_scores = self._rank_bm25(
+                query, namespaces, candidates, allowed
+            )
+            return self._build_hits(ranked[:limit], None, bm25_scores)
 
-        return self._hybrid_search(query, namespaces, limit)
+        return self._hybrid_search(query, namespaces, limit, allowed=allowed)
 
     def search_vector(
         self,
         query: str,
         namespace: str | None = None,
         k: int | None = None,
+        owner_id: str | None = None,
     ) -> list[DocumentHit]:
         """FAISS semantic search only, independent of the configured mode."""
         if not query.strip():
             return []
 
-        namespaces = self._search_namespaces(namespace)
+        namespaces = self._search_namespaces(namespace, owner_id)
 
         if not namespaces:
             return []
 
-        ranked, vector_scores = self._retrieve_vector(
-            query, namespaces, self._clamp_k(k)
+        limit = self._clamp_k(k)
+        allowed = self._allowed_ids(owner_id, namespaces)
+        candidates = self._candidates(limit, allowed is not None)
+        ranked, vector_scores = self._rank_vector(
+            query, namespaces, candidates, allowed
         )
         return self._build_hits(
-            ranked, vector_scores, None, filter_min_score=True
+            ranked[:limit], vector_scores, None, filter_min_score=True
         )
 
     def search_bm25(
@@ -287,43 +314,52 @@ class DocumentService:
         query: str,
         namespace: str | None = None,
         k: int | None = None,
+        owner_id: str | None = None,
     ) -> list[DocumentHit]:
         """BM25 keyword search only, with no embedding call."""
         if not query.strip():
             return []
 
-        namespaces = self._search_namespaces(namespace)
+        namespaces = self._search_namespaces(namespace, owner_id)
 
         if not namespaces:
             return []
 
-        ranked, bm25_scores = self._retrieve_bm25(
-            query, namespaces, self._clamp_k(k)
+        limit = self._clamp_k(k)
+        allowed = self._allowed_ids(owner_id, namespaces)
+        candidates = self._candidates(limit, allowed is not None)
+        ranked, bm25_scores = self._rank_bm25(
+            query, namespaces, candidates, allowed
         )
-        return self._build_hits(ranked, None, bm25_scores)
+        return self._build_hits(ranked[:limit], None, bm25_scores)
 
     def search_hybrid(
         self,
         query: str,
         namespace: str | None = None,
         k: int | None = None,
+        owner_id: str | None = None,
     ) -> list[DocumentHit]:
         """Vector + BM25 fusion with RRF, independent of the configured mode."""
         if not query.strip():
             return []
 
-        namespaces = self._search_namespaces(namespace)
+        namespaces = self._search_namespaces(namespace, owner_id)
 
         if not namespaces:
             return []
 
-        return self._hybrid_search(query, namespaces, self._clamp_k(k))
+        allowed = self._allowed_ids(owner_id, namespaces)
+        return self._hybrid_search(
+            query, namespaces, self._clamp_k(k), allowed=allowed
+        )
 
     def _hybrid_search(
         self,
         query: str,
         namespaces: Sequence[str],
         limit: int,
+        allowed: set[int] | None = None,
     ) -> list[DocumentHit]:
         """Run both retrievers concurrently and fuse their rankings with RRF.
 
@@ -331,20 +367,35 @@ class DocumentService:
         gives real overlap without making the service asynchronous. A failure in
         one retriever is logged and the other still contributes, except when
         both fail, which is surfaced instead of silently returning nothing.
+
+        ``allowed`` restricts each ranking before fusion; see ``search``.
         """
+        vector_candidates = (
+            self._candidates(self._vector_candidates, allowed is not None)
+            if allowed is not None
+            else self._vector_candidates
+        )
+        bm25_candidates = (
+            self._candidates(self._bm25_candidates, allowed is not None)
+            if allowed is not None
+            else self._bm25_candidates
+        )
+
         with ThreadPoolExecutor(max_workers=2) as executor:
             vector_future = executor.submit(
-                self._retrieve_vector,
+                self._rank_vector,
                 query,
                 namespaces,
-                self._vector_candidates,
+                vector_candidates,
+                allowed,
                 True,
             )
             bm25_future = executor.submit(
-                self._retrieve_bm25,
+                self._rank_bm25,
                 query,
                 namespaces,
-                self._bm25_candidates,
+                bm25_candidates,
+                allowed,
                 True,
             )
 
@@ -376,6 +427,52 @@ class DocumentService:
             bm25_scores,
             scores=dict(fused),
         )
+
+    def _rank_vector(
+        self,
+        query: str,
+        namespaces: Sequence[str],
+        candidates: int,
+        allowed: set[int] | None,
+        allow_failure: bool = False,
+    ) -> tuple[list[int], dict[int, float]] | None:
+        """Rank by vector similarity, then drop ids the caller may not read.
+
+        Filtering happens on the ranking itself so an unauthorized chunk is
+        never fused, never joined, and never reaches the model.
+        """
+        ranking = self._retrieve_vector(
+            query, namespaces, candidates, allow_failure
+        )
+
+        if ranking is None or allowed is None:
+            return ranking
+
+        ids, scores = ranking
+        kept = [row_id for row_id in ids if row_id in allowed]
+
+        return kept, {row_id: scores[row_id] for row_id in kept}
+
+    def _rank_bm25(
+        self,
+        query: str,
+        namespaces: Sequence[str],
+        candidates: int,
+        allowed: set[int] | None,
+        allow_failure: bool = False,
+    ) -> tuple[list[int], dict[int, float]] | None:
+        """Rank by BM25, then drop ids the caller may not read."""
+        ranking = self._retrieve_bm25(
+            query, namespaces, candidates, allow_failure
+        )
+
+        if ranking is None or allowed is None:
+            return ranking
+
+        ids, scores = ranking
+        kept = [row_id for row_id in ids if row_id in allowed]
+
+        return kept, {row_id: scores[row_id] for row_id in kept}
 
     def _retrieve_vector(
         self,
@@ -415,6 +512,7 @@ class DocumentService:
             return None
 
         return [row_id for row_id, _ in hits], dict(hits)
+
 
     def _build_hits(
         self,
@@ -479,17 +577,58 @@ class DocumentService:
 
         return results
 
-    def _search_namespaces(self, namespace: str | None) -> list[str]:
-        if namespace:
-            return [self._namespace(namespace)]
+    def _search_namespaces(
+        self, namespace: str | None, owner_id: str | None = None
+    ) -> list[str]:
+        requested = [self._namespace(namespace)] if namespace else None
 
-        return self._repository.list_namespaces()
+        if owner_id is None:
+            return requested or self._repository.list_namespaces()
 
-    def list_documents(self, namespace: str | None = None) -> list[Document]:
-        return self._repository.list_documents(namespace)
+        owned = self._repository.list_namespaces(owner_id=owner_id)
 
-    def list_namespaces(self) -> list[str]:
-        return self._repository.list_namespaces()
+        if requested is None:
+            return owned
+
+        return [name for name in requested if name in owned]
+
+    def _allowed_ids(
+        self, owner_id: str | None, namespaces: Sequence[str]
+    ) -> set[int] | None:
+        """Row ids the caller may retrieve, or ``None`` for no restriction."""
+        if owner_id is None:
+            return None
+
+        return self._repository.authorized_chunk_ids(owner_id, namespaces)
+
+    def _candidates(self, wanted: int, restricted: bool) -> int:
+        """Ask for more candidates when a later ownership filter will trim them."""
+        if not restricted:
+            return wanted
+
+        return min(_MAX_OWNER_CANDIDATES, max(wanted, wanted * _OWNER_OVERFETCH))
+
+    def list_documents(
+        self, namespace: str | None = None, owner_id: str | None = None
+    ) -> list[Document]:
+        return self._repository.list_documents(namespace, owner_id=owner_id)
+
+    def get_document(self, doc_id: str) -> Document | None:
+        return self._repository.get(doc_id)
+
+    def find_document(self, namespace: str | None, path: Path) -> Document | None:
+        """Resolve the document an ingested file became.
+
+        ``ingest_file`` names documents after the file stem and keys them by
+        ``(namespace, source)``, so this is the reliable way back to the row
+        after ingestion — unlike matching on the title.
+        """
+        return self._repository.find_by_source(
+            self._namespace(namespace), self._source(Path(path))
+        )
+
+    def list_namespaces(self, owner_id: str | None = None) -> list[str]:
+        return self._repository.list_namespaces(owner_id=owner_id)
 
     def delete_document(self, doc_id: str) -> bool:
         document = self._repository.get(doc_id)

@@ -71,7 +71,7 @@ For the full design and migration plan, see [`ARCHITECTURE.md`](./ARCHITECTURE.m
 | **JSON inventory dataset**        | ERP demo system of record (atomic writes, no ORM) |
 | **LangGraph interrupts**          | HITL approval, argument editing, and resume |
 | **uv**                            | Package and project management           |
-| **FastAPI / Uvicorn**             | Planned HTTP layer (not implemented yet) |
+| **FastAPI / Uvicorn**             | REST API presentation layer over the same services |
 | **pytest**                        | Automated tests (no OpenAI calls)        |
 
 ## Project Structure
@@ -236,6 +236,21 @@ RAG_MAX_PDF_BYTES=20000000
 RAG_MAX_PDF_PAGES=200
 ```
 
+Optional REST API settings (defaults shown). Required only to serve HTTP:
+
+```env
+API_ENV=development                  # development | production
+API_HOST=127.0.0.1
+API_PORT=8000
+API_UPLOAD_PATH=data/uploads
+API_MAX_UPLOAD_BYTES=20000000
+API_KEYS=alice=change-me-1,bob=change-me-2   # name=secret pairs
+JWT_SECRET_KEY=                      # >= 32 chars; required in production
+JWT_ALGORITHM=HS256
+JWT_ACCESS_TOKEN_EXPIRE_MINUTES=30
+CORS_ORIGINS=http://localhost:3000   # comma-separated, explicit origins
+```
+
 Optional inventory settings (defaults shown):
 
 ```env
@@ -293,7 +308,175 @@ The console script is declared in `pyproject.toml`:
 ```toml
 [project.scripts]
 agentic-chatbot = "agentic_chatbot:main"
+agentic-chatbot-api = "agentic_chatbot.api.main:main"
 ```
+
+## REST API
+
+The same services are also exposed over HTTP. The API is a second presentation
+layer: it calls the same `ChatService`, `ThreadService`, `DocumentService`, and
+compiled LangGraph the CLI drives, so nothing is duplicated.
+
+```bash
+# from the project root, so .env and data/ resolve
+uv run fastapi dev                         # FastAPI CLI, auto-reload (recommended)
+uv run fastapi run                         # FastAPI CLI, production-style
+uv run agentic-chatbot-api                 # uses API_HOST / API_PORT
+# or explicitly
+uv run uvicorn main:app --reload
+uv run uvicorn --factory agentic_chatbot.api.main:create_app \
+  --host 127.0.0.1 --port 8000
+```
+
+`fastapi dev` looks for `main.py`, `app.py`, or `api.py` in the **current
+directory**, which is why the repository root has a one-line `main.py` that
+exposes `app = create_app()`. It is the only file needed for that convenience —
+the real application stays in `agentic_chatbot/api/`, and importing it opens no
+database and compiles no graph (the lifespan does that).
+
+Before any of these will serve an authenticated request, `.env` needs its API
+settings (see below). Without `API_KEYS` and `JWT_SECRET_KEY` the app starts and
+`/health` answers, but `/health/ready` reports **503** and every protected call
+is `401`.
+
+Swagger is at `/docs` and ReDoc at `/redoc` while `API_ENV=development`. Both are
+disabled when `API_ENV=production`.
+
+### Authentication
+
+An operator exchanges a configured API key for a short-lived HS256 JWT. Keys are
+declared with `API_KEYS=alice=secret,bob=secret`; use `secrets.token_urlsafe` for
+both the keys and `JWT_SECRET_KEY` (at least 32 characters).
+
+```bash
+TOKEN=$(curl -s -X POST http://127.0.0.1:8000/api/v1/auth/token \
+  -H 'content-type: application/json' \
+  -d '{"api_key":"change-me-1"}' | jq -r .access_token)
+```
+
+Every resource endpoint requires `Authorization: Bearer $TOKEN`. The token
+subject is the caller's identity; it is never accepted from a request body.
+
+### Endpoints
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/health` | liveness: `{"status":"ok","application":"BAYAZID AI"}` |
+| GET | `/health/ready` | local readiness checks (200/503); no model call |
+| POST | `/api/v1/auth/token` | API key → access token |
+| POST | `/api/v1/chat` | send a message, create or reuse a thread |
+| POST | `/api/v1/chat/stream` | the same turn as Server-Sent Events |
+| GET | `/api/v1/threads` | the caller's conversations |
+| GET | `/api/v1/threads/{id}` | one conversation |
+| PATCH | `/api/v1/threads/{id}` | rename (`{"title": "..."}`) |
+| DELETE | `/api/v1/threads/{id}` | delete checkpoints, then metadata |
+| GET | `/api/v1/threads/{id}/history` | conversational messages |
+| GET | `/api/v1/approvals` | the caller's pending approvals |
+| GET | `/api/v1/approvals/{id}` | approval detail incl. editable fields |
+| POST | `/api/v1/approvals/{id}/decision` | approve, edit, or reject |
+| GET | `/api/v1/documents` | the caller's indexed documents |
+| POST | `/api/v1/documents` | upload (multipart `file`) and index |
+| GET | `/api/v1/documents/{id}` | document metadata |
+| DELETE | `/api/v1/documents/{id}` | delete document + its vectors |
+
+### Chat
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/v1/chat \
+  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"message":"Hello, how are you?"}'
+```
+
+```json
+{
+  "thread_id": "0f9c…",
+  "response": "Hello! How can I help you today?",
+  "status": "completed",
+  "title": "Simple Greetings",
+  "approval_id": null
+}
+```
+
+Pass `thread_id` to continue an existing conversation. A thread that does not
+exist, or belongs to someone else, is `404 THREAD_NOT_FOUND` — the API never
+confirms that another user's ID exists.
+
+### Streaming
+
+```bash
+curl -N -X POST http://127.0.0.1:8000/api/v1/chat/stream \
+  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"message":"Summarise the handbook"}'
+```
+
+```
+event: thread            data: {"thread_id": "0f9c…"}
+event: status            data: {"status": "processing"}
+event: tool_start        data: {"tool": "search_documents", "arguments": {"query": "…"}}
+event: tool_end          data: {"tool": "search_documents", "result": "…"}
+event: token             data: {"content": "Hello"}
+event: approval_required data: {"approval_id": "…", "thread_id": "…", "action": "update_product",
+                                "title": "Update Product", "arguments": {…},
+                                "allowed_decisions": ["approve", "edit", "reject"]}
+event: final             data: {"title": "Simple Greetings"}
+event: error             data: {"code": "STREAM_ERROR", "message": "The response failed."}
+```
+
+Tokens are the provider's own chunks, not a split of a finished reply. Closing
+the connection closes the graph stream and releases the conversation lock.
+
+### HITL approvals
+
+When a sensitive tool is proposed, the turn stops and `chat` reports
+`"status": "awaiting_approval"` with an `approval_id`, or the stream emits
+`approval_required`. Nothing executes until a decision arrives.
+
+```bash
+# 1. What is waiting
+curl -s http://127.0.0.1:8000/api/v1/approvals -H "authorization: Bearer $TOKEN"
+# 2. Decide
+curl -s -X POST http://127.0.0.1:8000/api/v1/approvals/$APPROVAL_ID/decision \
+  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"decision":"edit","edited_arguments":{"selling_price":95000}}'
+```
+
+Decisions are `approve`, `edit` (requires `edited_arguments`), and `reject`
+(optional `comment`). `respond` returns **422**: the graph has no such branch, and
+silently treating free text as a rejection would misreport the human's intent.
+
+The `approval_id` is an HMAC over the caller, the thread, the live interrupt id,
+and the graph's own approval token. It is not stored, and the internal token is
+never returned. A decision is accepted only if that handle still matches the
+*currently pending* interrupt, re-checked under the conversation lock, so a stale,
+forged, or replayed decision cannot execute a tool. A second decision is `409`.
+
+### Documents
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/v1/documents \
+  -H "authorization: Bearer $TOKEN" -F 'file=@docs/handbook.md'
+```
+
+Uploads are size-limited while being received (413), verified by content rather
+than extension (415), stored under server-generated names, and indexed into the
+caller's own namespace. Identical bytes are skipped rather than duplicated.
+Responses never contain the storage path, and `search_documents` used by the agent
+is scoped to the authenticated user, so retrieval cannot surface another user's
+documents.
+
+### Notes and limitations
+
+- **One worker.** The container holds one SQLite connection, one `SqliteSaver`,
+  in-process FAISS/BM25 caches, and the single-writer inventory JSON. Run
+  `uvicorn` with a single worker; multi-worker needs a connection pool or Postgres.
+- `GET /api/v1/approvals` reads state once per thread (O(threads)).
+- API keys are operator identities, not a user-management system: no refresh
+  tokens, no rate limiting, no HTTPS termination. Do not expose this directly to
+  the internet.
+- On Windows, `uvicorn[standard]`'s `httptools`/`uvloop` wheels have crashed
+  (`0xC0000005`); pass `http="h11"` if that happens.
+
+See `FASTAPI-SPRINTS.md` for how the work was sequenced and what was verified.
 
 ## The Terminal Interface
 
@@ -1048,6 +1231,7 @@ retrieved by hybrid search — FAISS vector similarity and BM25 keyword matching
 fused with Reciprocal Rank Fusion, one index pair per namespace. Add a tool to
 `registry.py` to expose it to the model, or a command to `cli/commands.py` to
 expose it to the user. LangSmith tracing is available when enabled through
-`.env`. FastAPI is not part of the current runtime; it is the next planned
-milestone, and `ARCHITECTURE.md` documents how to wire it in without touching
-the services.
+`.env`. The same services are also served over HTTP by the `api/` package
+(FastAPI), which adds no business logic of its own — the CLI and the API are two
+presentations of one core. See the REST API section above and `ARCHITECTURE.md`
+§10 for the wiring, ownership model, and concurrency contract.

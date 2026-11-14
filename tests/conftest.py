@@ -77,6 +77,61 @@ def inventory_data_path(tmp_path) -> Path:
     return target
 
 
+API_KEYS = "alice=alice-secret,bob=bob-secret"
+JWT_SECRET = "a-real-secret-used-only-by-tests-and-long-enough-for-hs256"
+
+
+@pytest.fixture
+def api_settings(settings) -> Settings:
+    """API settings over the same temporary database/FAISS/inventory."""
+    return settings.model_copy(
+        update={
+            "openai_api_key": "test-key",
+            "api_keys": API_KEYS,
+            "jwt_secret_key": JWT_SECRET,
+            "cors_origins": "http://localhost:3000",
+            "api_upload_path": str(Path(settings.database_path).parent / "uploads"),
+        }
+    )
+
+
+@pytest.fixture
+def api_client(api_settings):
+    """A started TestClient; the lifespan builds and closes the container.
+
+    Embeddings are replaced with the deterministic double from ``tests.fakes`` so
+    document tests never reach the network.
+    """
+    from fastapi.testclient import TestClient
+
+    from agentic_chatbot.api.main import create_app
+    from tests.fakes import FakeEmbeddings
+
+    app = create_app(settings=api_settings)
+
+    with TestClient(app) as client:
+        container = app.state.container
+        container.document_service._embeddings = FakeEmbeddings(
+            dimensions=api_settings.embedding_dimensions
+        )
+        yield client
+
+
+@pytest.fixture
+def auth_headers(api_client):
+    """Authorization headers for the default operator."""
+
+    def headers(api_key: str = "alice-secret") -> dict[str, str]:
+        response = api_client.post(
+            "/api/v1/auth/token", json={"api_key": api_key}
+        )
+        assert response.status_code == 200, response.text
+        token = response.json()["access_token"]
+        return {"Authorization": f"Bearer {token}"}
+
+    return headers
+
+
 @pytest.fixture
 def inventory_store(inventory_data_path):
     return InventoryStore(inventory_data_path)

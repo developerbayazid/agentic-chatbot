@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -236,6 +237,24 @@ class ChatbotContainer:
             settings.system_prompt + TOOL_GUIDANCE,
             context_provider=lambda: _knowledge_catalog(self.document_service),
         )
+
+        self._thread_locks: dict[str, threading.Lock] = {}
+        self._thread_locks_guard = threading.Lock()
+
+    def thread_lock(self, thread_id: str) -> threading.Lock:
+        """Return the lock that serializes work on one conversation.
+
+        Different conversations stay concurrent; the same conversation never
+        runs two graph turns (or a turn and a resume) at once.
+        """
+        with self._thread_locks_guard:
+            lock = self._thread_locks.get(thread_id)
+
+            if lock is None:
+                lock = threading.Lock()
+                self._thread_locks[thread_id] = lock
+
+            return lock
 
     def close(self) -> None:
         self.connection.close()

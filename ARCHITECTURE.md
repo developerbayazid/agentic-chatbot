@@ -1,10 +1,10 @@
 # Architecture
 
 This document describes how the chatbot is structured **right now**: a
-single-process, interactive CLI application built with LangChain, LangGraph,
-SQLite, and FAISS. FastAPI has been intentionally removed for the moment. The
-layout below exists so that adding an HTTP layer later is a wiring change rather
-than a rewrite.
+single-process application with two interchangeable presentations — an interactive
+CLI and a REST API — built with LangChain, LangGraph, SQLite, and FAISS. The
+layout below keeps the HTTP layer a thin adapter: adding it was a wiring change,
+not a rewrite.
 
 > For setup and usage instructions, see `README.md`.
 
@@ -63,6 +63,18 @@ agentic-chatbot/
         │   ├── input.py         # framed prompt + prompt_toolkit completion
         │   ├── picker.py        # interactive /threads session picker
         │   └── app.py           # interactive loop + main()
+        │
+        ├── api/                 # REST presentation (FastAPI) — see §10
+        │   ├── main.py          # create_app(), lifespan, CORS, entry point
+        │   ├── dependencies.py  # container/service providers, current user
+        │   ├── security.py      # JWT + API keys + approval handle
+        │   ├── errors.py        # one error envelope
+        │   ├── context.py       # request correlation id
+        │   ├── sse.py           # TurnEvent -> Server-Sent Events
+        │   ├── uploads.py       # validated, server-named ingestion
+        │   ├── routers/         # health, auth, chat, threads, approvals,
+        │   │                    # documents
+        │   └── schemas/         # Pydantic request/response models
         │
         ├── config.py            # pydantic-settings Settings (env + .env)
         ├── llm.py               # ChatOpenAI factory
@@ -167,6 +179,8 @@ inventory-data/
 
 - `cli` → `container` → (`config`, `database`, `repository`, `graph`, `llm`,
   `embeddings`, `loaders`, `vector_store`, `services`, `tools`)
+- `api` → `container` (via `app.state`) and the same services; `api` never imports
+  `cli`, and `cli` never imports `api`. Starting one never starts the other.
 - `services.chat` → compiled graph + `ThreadService` + `TitleService`
 - `services.thread` → `ThreadRepository` + `SqliteSaver`
 - `services.document` → `DocumentsRepository` + `VectorIndexStore` +
@@ -1284,58 +1298,206 @@ appropriate).
 
 ---
 
-## 10. How FastAPI will plug in (migration plan)
+## 10. HTTP layer (`api/`)
 
-The service layer needs no changes. The work is additive:
+FastAPI is a second presentation layer. It is wired the way section 10 originally
+proposed — a lifespan builds the existing composition root, dependencies hand its
+services to routers, and routers are thin adapters — but it now exists. **No
+business logic was added to `api/`.**
 
-1. **Lifespan** (`app/main.py` or similar):
+```text
+                    BAYAZID AI
+                         │
+             container.py (composition root)
+                         │
+          ┌──────────────┴──────────────┐
+       cli/                          api/
+   (Rich + prompt_toolkit)      (FastAPI routers)
+          │                             │
+          └──────────────┬──────────────┘
+                         │
+                   Services (unchanged)
+                         │
+      LangGraph · SQLite · FAISS · BM25 · JSON inventory
+```
 
-   ```python
-   @asynccontextmanager
-   async def lifespan(app):
-       app.state.container = build_container()
-       try:
-           yield
-       finally:
-           app.state.container.close()
-   ```
+### 10.1 Composition and lifecycle
 
-2. **Dependency providers** return services from `app.state.container`, e.g.
-   `get_chat_service`, `get_thread_service`.
+`api/main.py::create_app(settings=None, container_factory=None)` builds the
+`FastAPI` object; `agentic-chatbot-api` and
+`uvicorn --factory agentic_chatbot.api.main:create_app` both start it.
 
-3. **Endpoints** become thin adapters:
+- The **lifespan** calls `anyio.to_thread.run_sync(build_container, settings)`
+  once (it does database and file I/O), stores the container on
+  `app.state.container`, and calls `container.close()` in `finally`.
+- `create_app` passes its `settings` to the factory. It must not fall back to
+  `get_settings()`: an earlier version did, so every API test silently opened the
+  real `chatbot_memory.db` instead of its temporary one. A regression test now
+  asserts `container.settings is api_settings`.
+- Nothing opens a database or compiles a graph at import time, so importing
+  `agentic_chatbot.api` from a test is free. The CLI still builds its own
+  container and is unaffected.
+- Startup failures propagate (`uvicorn` exits non-zero); a wildcard
+  `CORS_ORIGINS`, a placeholder `JWT_SECRET_KEY` in production, or a signing
+  secret shorter than 32 characters is rejected before serving traffic.
 
-   | Endpoint                                  | Service call                              |
-   | ----------------------------------------- | ----------------------------------------- |
-   | `POST /threads`                           | `thread_service.create_thread()`          |
-   | `GET /threads`                            | `thread_service.list_threads()`           |
-   | `GET /threads/{id}`                       | `thread_service.get_thread()` → 404 if `None` |
-   | `PATCH /threads/{id}`                     | `thread_service.rename_thread()`          |
-   | `DELETE /threads/{id}`                    | `thread_service.delete_thread()`          |
-   | `GET /threads/{id}/history`               | `chat_service.get_messages()`             |
-   | `POST /threads/{id}/messages/stream`      | iterate `chat_service.stream_turn()` → SSE |
-   | `POST /threads/{id}/messages`             | iterate `stream_turn()` and join tokens   |
+`api/dependencies.py` exposes `get_container`, `get_chat_service`,
+`get_thread_service`, `get_document_service`, `get_settings`, and
+`get_current_user`. Routers depend on those, never on a global.
 
-4. **Schemas**: add Pydantic models mirroring `Thread` and `TurnEvent` (or let
-   Pydantic validate dataclasses directly).
+### 10.2 Sync endpoints, deliberately
 
-5. **Validation**: the API layer should check `thread_service.thread_exists()`
-   before calling `ChatService`, and translate service results into HTTP errors.
-   The services currently assume callers have validated the thread.
+Every service is synchronous (`sqlite3`, FAISS, `graph.stream`, embeddings).
+Routers are declared with `def`, so Starlette runs them in its worker threadpool:
+no service was converted to async and no `run_in_threadpool` calls are sprinkled
+around. The streaming route returns a `StreamingResponse` over a **sync**
+generator, which Starlette also iterates off the event loop.
 
-### Concurrency consideration
+### 10.3 Authentication and ownership
 
-`ChatbotContainer` shares **one** SQLite connection and one `SqliteSaver`
-across the process. That is correct for a single-threaded CLI, and
-`check_same_thread=False` prevents the obvious error. Under Uvicorn with
-concurrent requests (or multiple workers) you should either:
+`API_KEYS=name=secret,...` are operator identities. `POST /api/v1/auth/token`
+verifies one in constant time and issues a short-lived HS256 JWT whose `sub` is
+the identity. `get_current_user` decodes it (signature *and* expiry) and yields a
+`CurrentUser`.
 
-- serialize access with a lock around checkpointer/graph execution, or
-- move to per-request connections / a connection pool, or
-- run a single worker if traffic is low.
+Ownership lives in SQL, not in the routers:
 
-This is a runtime concern, not an architectural one: the container boundary is
-where that change belongs.
+- `threads.owner_id` and `documents.owner_id` are nullable; `NULL` means "created
+  by the CLI", which the API never exposes. Both columns are added by idempotent
+  migrations in `database.py`, alongside `idx_threads_owner` /
+  `idx_documents_owner`.
+- Every lookup filters by the token subject. A thread or document that exists but
+  belongs to someone else answers **404**, not 403 — otherwise the response
+  confirms that an ID exists.
+- Request schemas use `extra="forbid"`, so a client cannot even *try* to supply
+  `owner_id`; it is rejected as a validation error rather than ignored.
+
+### 10.4 Per-user agent retrieval
+
+Authorization had to reach the RAG path, not just the REST endpoints:
+`tools/documents.py` called `service.search(query, namespace, k)` with no caller
+identity, so the model could read any user's chunks.
+
+```text
+JWT sub ──► ChatService.get_config(thread_id, owner_id)
+                └─► configurable["rag_owner_id"]
+                        └─► search_documents (injected RunnableConfig)
+                                └─► DocumentService.search(..., owner_id=...)
+                                        └─► allowed = authorized_chunk_ids()
+                                                └─► filtered inside each retriever,
+                                                    BEFORE Reciprocal Rank Fusion
+```
+
+- The identity travels in `RunnableConfig`, the same mechanism the notes tools
+  already use. It is **not** a tool argument, so a prompt-injected `owner_id`
+  cannot exist.
+- `_rank_vector` / `_rank_bm25` drop unauthorized row ids from each ranking
+  before fusion. Filtering after fusion would let a foreign chunk change the
+  order of authorized ones.
+- Owner-scoped queries over-fetch candidates (`_OWNER_OVERFETCH`) and trim to
+  `k`, because filtering can shrink the list.
+- `owner_id=None` (the CLI, operator scripts) filters nothing and reproduces the
+  previous global behaviour exactly.
+
+### 10.5 Approvals over HTTP
+
+No second approval system: `api/routers/approvals.py` reads the same LangGraph
+interrupts and resumes the same graph through `ChatService.resume_turn`.
+
+`approval_id` is an **HMAC** over `subject | thread_id | interrupt_id |
+approval_token`, keyed by `JWT_SECRET_KEY`. It is deterministic, unforgeable, and
+names the exact proposal; the graph's own token is never sent to a client. A
+decision must satisfy, in order:
+
+1. the handle parses;
+2. it matches one of the caller's **currently pending** interrupts (ownership and
+   authorization are the same check, so there is no separate, forgettable one);
+3. it still matches after re-reading under the per-thread lock.
+
+That makes a stale, forged, or replayed decision impossible, and a duplicate or
+concurrent decision returns `409` after the first one resumes. `respond` answers
+`422` because `graph/approval.py` has no such branch — mapping it to `reject`
+would misreport what the human decided.
+
+### 10.6 Concurrency
+
+The container shares **one** SQLite connection, and the three repositories each
+hold their own cursor on it. Per-repository locks would therefore protect
+nothing: one thread's `commit()` could commit another thread's open transaction.
+Instead:
+
+- `database.connection_lock(connection)` returns one `RLock` per connection
+  (keyed by identity, so a repository built from a bare connection in a test
+  shares it). Every public repository method runs under it — cursor creation,
+  `execute`, fetch, `lastrowid`, `commit`, and `rollback` included.
+- `ChatbotContainer.thread_lock(thread_id)` serializes one conversation. Different
+  conversations still run concurrently; the same one cannot be double-driven by a
+  turn and a resume.
+- `SqliteSaver` has its own internal lock which does **not** compose with
+  `connection_lock`. Two things keep that contained: every write commits inside
+  its own method (no transaction spans calls), and turns are serialized per
+  thread. A connection pool or Postgres is the real fix.
+- `VectorIndexStore` and `BM25IndexStore` already lock; uploads additionally take
+  a per-`(owner, namespace)` lock so duplicate uploads cannot race.
+
+**Run one uvicorn worker.** The shared connection, `SqliteSaver`, in-process
+FAISS/BM25 caches, and the single-writer inventory JSON all assume a single
+process.
+
+### 10.7 Streaming
+
+`api/sse.py` maps the transport-neutral `TurnEvent` contract:
+
+| `TurnEvent` | SSE event |
+| --- | --- |
+| `token` | `token` |
+| `tool_call` | `tool_start` |
+| `tool_result` | `tool_end` |
+| `interrupt` | `approval_required` (with `approval_id`, token stripped) |
+| `done` | `final` |
+
+plus `thread`, `status`, and `error`. Tokens are the provider's own chunks; the
+endpoint never splits a finished answer. The generator holds the per-thread lock
+for its lifetime and releases it in `finally`, so a disconnect (`GeneratorExit`)
+closes the graph stream rather than leaking it.
+
+### 10.8 Uploads
+
+`api/uploads.py` generates the path that is ingested and never trusts a client
+one: a `<uuid>` scratch file, then `<sha256(content)[:16]><ext>` under the
+caller's directory. Size is enforced while reading (413), the bytes — not just the
+extension — are verified (PDF magic number, UTF-8 text without NULs, 415), the
+scratch file is removed in `finally`, and a failed ingestion deletes the stored
+file so no orphan survives. Because the name derives from the content, re-uploading
+identical bytes is skipped by the service's existing hash check.
+
+### 10.9 Entry points
+
+```toml
+[project.scripts]
+agentic-chatbot     = "agentic_chatbot:main"          # CLI
+agentic-chatbot-api = "agentic_chatbot.api.main:main" # API
+```
+
+Also usable, with no script involved:
+
+| Command | Resolves to |
+| --- | --- |
+| `uv run fastapi dev` | root `main.py` → `app = create_app()` |
+| `uv run fastapi run` | same |
+| `uv run uvicorn main:app` | same |
+| `uv run uvicorn --factory agentic_chatbot.api.main:create_app` | the factory directly |
+
+The FastAPI CLI discovers `main.py` / `app.py` / `api.py` in the **current
+directory** and requires a module-level `FastAPI` instance (it does not call a
+factory), so the repository root carries a two-line `main.py` for that only:
+`app = create_app()`. `[tool.fastapi] entrypoint = "main:app"` in
+`pyproject.toml` makes the same resolution work from any directory. Importing
+either entry point has no side effects — the container and graph are built by the
+lifespan.
+
+`uv run agentic-chatbot` still enters `cli/app.py::main()`; the API never imports
+CLI presentation code, and starting the API never starts the CLI.
 
 ---
 
@@ -1400,20 +1562,25 @@ where that change belongs.
 2. **Database path default** — `Settings.database_path` defaults to
    `chatbot_memory.db`, while `.env.example` shows `data/chatbot_memory.db`.
    Keep `DATABASE_PATH=chatbot_memory.db` to reuse an existing database.
-3. **Single shared connection** — see the concurrency note in section 10.
+3. **Single shared connection** — see `§10.6`. The API serializes SQL through one
+   `connection_lock` and each conversation through `thread_lock`, but one process
+   is still assumed. Run a single uvicorn worker; multi-worker needs a connection
+   pool (or Postgres) and a lock manager that is not in-process.
 4. **Title generation is synchronous** — it happens after the last token and
    before the `done` event; a slow title call delays turn completion slightly.
-5. **No HTTP layer yet** — FastAPI/Uvicorn remain in `pyproject.toml`
-   dependencies but are not imported anywhere in `src/agentic_chatbot/`.
-6. **Console script name uses a hyphen** — run `uv run agentic-chatbot`, not
+5. **Console script name uses a hyphen** — run `uv run agentic-chatbot`, not
    `agentic_chatbot`. The module entry point is `uv run python -m agentic_chatbot`
-   (no `.py`).
-7. **Tool loops are bounded by LangGraph's recursion limit** (default 25). A
+   (no `.py`). The API is `uv run agentic-chatbot-api`.
+6. **Tool loops are bounded by LangGraph's recursion limit** (default 25). A
    model that keeps requesting tools raises `GraphRecursionError`, which the CLI
    reports like any other stream error.
-8. **Mock tools return simulated data** — `tools/mocks.py` never calls the
+7. **Mock tools return simulated data** — `tools/mocks.py` never calls the
    network and marks responses with `"mock": true`. Do not present their output
    as live data; replace each body with a real client as keys are added.
+8. **`uvicorn[standard]` can crash on Windows** — the bundled `httptools`/
+   `uvloop` extension can raise `0xC0000005` (access violation) at startup. Pass
+   `http="h11"` (and `loop="asyncio"`) if that happens; the app itself is
+   unaffected.
 9. **Mock calendar state is in-memory** — events created by
    `create_calendar_event` reset when the process exits. Notes are the exception:
    they are persisted in SQLite and survive restarts.

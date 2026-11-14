@@ -24,10 +24,14 @@ dependencies = [
     "rich>=15.0.0",
     "streamlit>=1.67.0",
     "uvicorn[standard]>=0.54.0",
+    "fastapi[standard]>=0.163.0",
+    "python-multipart>=0.0.33",
+    "pyjwt>=2.15.1",
 ]
 
 [project.scripts]
 agentic-chatbot = "agentic_chatbot:main"
+agentic-chatbot-api = "agentic_chatbot.api.main:main"
 
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]
@@ -44,3 +48,8 @@ testpaths = ["tests"]
 filterwarnings = [
     'ignore:.*asyncio\.iscoroutinefunction.*:DeprecationWarning',
 ]
+
+# Allows `uv run fastapi dev` / `uv run fastapi run` from any directory.
+# The root main.py exposes `app = create_app()` for the same reason.
+[tool.fastapi]
+entrypoint = "main:app"

@@ -20,11 +20,13 @@ class ThreadService:
         self._repository = repository
         self._checkpointer = checkpointer
 
-    def create_thread(self, title: str = "New chat") -> Thread:
-        return self._repository.create(title)
+    def create_thread(
+        self, title: str = "New chat", owner_id: str | None = None
+    ) -> Thread:
+        return self._repository.create(title, owner_id=owner_id)
 
-    def list_threads(self) -> list[Thread]:
-        return self._repository.list_all()
+    def list_threads(self, owner_id: str | None = None) -> list[Thread]:
+        return self._repository.list_all(owner_id=owner_id)
 
     def get_thread(self, thread_id: str) -> Thread | None:
         return self._repository.get(thread_id)

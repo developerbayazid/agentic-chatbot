@@ -7,8 +7,9 @@ The application is currently a modular, interactive **CLI**. It preserves
 thread-isolated conversations in SQLite through LangGraph's `SqliteSaver`,
 generates conversation titles automatically, streams model responses token by
 token, and supports tool calling through a LangGraph tool loop. It also performs
-**retrieval-augmented generation** over local Markdown, text, and PDF files,
-using OpenAI embeddings and one FAISS index per namespace. Optional LangSmith
+**retrieval-augmented generation** over local Markdown, text, and PDF files using
+**hybrid search**: OpenAI embeddings in one FAISS index per namespace fused with
+BM25 keyword search through Reciprocal Rank Fusion (RRF). Optional LangSmith
 tracing sends runs to LangSmith for debugging and monitoring. The code is split
 into presentation, service, graph, retrieval, and persistence layers so a
 FastAPI backend can be added later without rewriting business logic.
@@ -32,7 +33,8 @@ For the full design and migration plan, see [`ARCHITECTURE.md`](./ARCHITECTURE.m
 - Keep business logic framework-agnostic so it is reusable by a CLI or an API.
 - Provide a tool-calling loop with a single registry of local and mock-backed tools.
 - Add retrieval-augmented generation over local documents with per-namespace
-  vector indexes and page-level PDF citations.
+  vector indexes, BM25 keyword indexes, page-level PDF citations, and hybrid
+  fusion for better recall.
 - Add a FastAPI backend and frontend later without restructuring the core.
 
 ## Tech Stack
@@ -46,6 +48,7 @@ For the full design and migration plan, see [`ARCHITECTURE.md`](./ARCHITECTURE.m
 | **LangSmith**                     | Tracing and observability                |
 | **OpenAI**                        | Chat models and `text-embedding-3-small` embeddings |
 | **FAISS**                         | One vector index per namespace (RAG)     |
+| **rank-bm25**                     | BM25 keyword index over document chunks  |
 | **pypdf**                         | PDF text extraction (no OCR)             |
 | **Pydantic / pydantic-settings**  | Configuration loading and validation     |
 | **Rich**                          | Terminal panels, tables, Markdown, color |
@@ -78,6 +81,8 @@ agentic-chatbot/
 │       ├── embeddings.py        # OpenAIEmbeddings factory
 │       ├── loaders.py           # text/Markdown/PDF -> page-aware sections
 │       ├── vector_store.py      # per-namespace FAISS indexes
+│       ├── bm25_store.py        # per-namespace BM25 indexes (rebuilt from SQLite)
+│       ├── rrf.py               # Reciprocal Rank Fusion
 │       ├── database.py          # SQLite connection + schema
 │       ├── models.py            # Thread, Note, Document, TurnEvent dataclasses
 │       ├── repository.py        # Thread, Notes, and Documents repositories
@@ -132,8 +137,10 @@ cli/  →  container.py  →  services  →  graph / repository / retrieval  →
   document ingestion/retrieval. Independent of any UI or HTTP framework.
 - **Graph** (`graph/`) — LangGraph state, the chat node, the `ToolNode`, and the
   compiled chatbot.
-- **Retrieval** (`loaders.py`, `vector_store.py`, `embeddings.py`) — text/PDF
-  loading, chunk embeddings, and one FAISS index per namespace.
+- **Retrieval** (`loaders.py`, `vector_store.py`, `bm25_store.py`, `rrf.py`,
+  `embeddings.py`) — text/PDF loading, chunk embeddings with one FAISS index per
+  namespace, BM25 keyword indexes over the same SQLite chunks, and RRF fusion of
+  the two rankings.
 - **Tools** (`tools/`) — `@tool` implementations registered in `registry.py` and
   executed by LangGraph's `ToolNode`, including `search_documents`.
 - **Persistence** (`repository.py`, `database.py`) — thread, note, and document
@@ -189,6 +196,10 @@ RAG_CHUNK_SIZE=800
 RAG_CHUNK_OVERLAP=120
 RAG_TOP_K=4
 RAG_MIN_SCORE=0.15
+RAG_SEARCH_MODE=hybrid
+RAG_VECTOR_CANDIDATES=10
+RAG_BM25_CANDIDATES=10
+RAG_RRF_K=60
 DOCS_PATH=docs
 RAG_INDEX_PATH=data/faiss
 RAG_MAX_TEXT_BYTES=2000000
@@ -531,7 +542,7 @@ directly.
 | Local utilities     | `utilities.py` | `convert_units`, `generate_uuid`, `generate_password`, `hash_text`, `base64_encode`, `base64_decode`, `format_json`, `regex_search`, `summarize_text`                                                 |
 | Everyday life       | `life.py`      | `calculate_loan_payment`, `calculate_tip_split`, `calculate_bmi`, `calculate_age`, `days_between`, `convert_timezone`, `estimate_fuel_cost`                                                            |
 | Notes (per thread)  | `notes.py`     | `save_note`, `list_notes`, `search_notes`, `delete_note` — scoped to the active conversation                                                                                                           |
-| Retrieval (RAG)     | `documents.py` | `search_documents`, `list_documents` — cosine search over ingested text and PDFs, one FAISS index per namespace                                                                                        |
+| Retrieval (RAG)     | `documents.py` | `search_documents`, `list_documents` — hybrid search (FAISS + BM25 fused with RRF) over ingested text and PDFs, one index pair per namespace |
 | Mock API services   | `mocks.py`     | `fetch_url`, `get_news`, `get_weather`, `get_stock_price`, `convert_currency`, `send_email`, `send_slack_message`, `create_calendar_event`, `list_calendar_events`, `translate_text`, `find_recipe`, `get_holidays`, `track_package` (`web_search` is defined but currently disabled) |
 
 All tools that need an external service (`mocks.py`) return simulated data and
@@ -585,7 +596,7 @@ Supported files: `.md`, `.markdown`, `.txt`, `.rst`, and `.pdf`. Drop them in
 ```text
 /ingest docs handbook          # index docs/ into the "handbook" namespace
 /documents                     # list namespaces and indexed files
-/ingest docs policies --force  # re-embed and rebuild the index
+/ingest docs policies --force  # re-embed and rebuild the indexes
 ```
 
 Each namespace has its own FAISS index file under `data/faiss/`. Text files use
@@ -594,17 +605,74 @@ files are skipped by content hash; `--force` overrides that. `search_documents`
 is exposed to the model, which calls it for questions about the ingested
 material and cites title/source/page.
 
+### How hybrid search works
+
+Retrieval runs two independent searches for the same query and fuses them:
+
+1. **Vector search (FAISS)** — the query is embedded with
+   `text-embedding-3-small`, L2-normalized, and looked up in the namespace's
+   `IndexIDMap2(IndexFlatIP)` index. Scores are cosine similarity, so this finds
+   chunks that are *semantically* related even with different wording.
+2. **BM25 keyword search** — chunk text from `document_chunks` is tokenized
+   (lowercase alphanumeric terms) into an in-memory `BM25Okapi` index per
+   namespace. This finds *exact* terms: names, employee IDs (`EMP-1042`), product
+   codes (`SKU-9931`), and technical jargon that embeddings can blur.
+3. **Reciprocal Rank Fusion (RRF)** — both result lists are combined by rank
+   position, not by score, so cosine similarity and BM25 scores never have to be
+   normalized against each other:
+
+   ```text
+   RRF(d) = sum over each list of 1 / (k + rank(d))
+   ```
+
+   With `k = 60`, a chunk ranked first in one list scores `1/61 ≈ 0.0164`; a
+   chunk appearing in both lists accumulates both contributions and rises to the
+   top. Results are deduplicated by `document_chunks.row_id`, so the same chunk
+   found by both retrievers appears once with a boosted score. The final Top-K is
+   returned, best first.
+
+SQLite remains the source of truth. BM25 needs no extra database and no
+persistence: indexes are built from `document_chunks` on first use and rebuilt
+whenever a namespace's chunk set changes (detected with a cheap
+count/max/sum `row_id` fingerprint), so ingestion, re-ingestion, and deletion can
+never leave a stale keyword index. After a restart the first search rebuilds from
+SQLite.
+
+Both searches run concurrently on a two-worker thread pool (the retrievers are
+blocking and thread-safe), which keeps the synchronous service synchronous. If
+one retriever fails, the other still contributes; only a total failure both is
+reported as a retrieval error.
+
+### Configuring retrieval
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `RAG_SEARCH_MODE` | `hybrid` | `hybrid`, `vector`, or `bm25` |
+| `RAG_VECTOR_CANDIDATES` | `10` | chunks requested from FAISS |
+| `RAG_BM25_CANDIDATES` | `10` | chunks requested from BM25 |
+| `RAG_TOP_K` | `4` | final fused result count (`k` tool argument overrides it) |
+| `RAG_RRF_K` | `60` | RRF rank-damping constant |
+| `RAG_MIN_SCORE` | `0.15` | cosine floor, applied in `vector` mode only |
+
+`RAG_SEARCH_MODE=vector` restores the previous cosine-only behaviour exactly,
+and `bm25` runs keyword search with no embedding call. The service also exposes
+`search_vector()`, `search_bm25()`, and `search_hybrid()` directly so the modes
+can be compared without changing configuration.
+
 Notes:
 
+- RRF scores are not cosine similarities. In `hybrid` mode `RAG_MIN_SCORE` is not
+  applied, because RRF scores are tiny by construction; each hit still reports its
+  `vector_score` and `bm25_score` so the contribution of each retriever is
+  visible.
 - Scanned/image-only PDFs have no text layer and are reported as ingest errors —
   there is no OCR.
-- `RAG_MIN_SCORE` (default `0.15`) filters weak hits so "nothing relevant" is a
-  real answer instead of the nearest unrelated chunk.
 - A search `namespace` must be a value from `/documents` (the ingest namespace),
   not a document title. An unknown namespace returns an error listing the valid
   ones; omitting it searches everything.
 - Changing `EMBEDDINGS_MODEL` or `EMBEDDING_DIMENSIONS` invalidates existing
-  indexes; re-ingest with `--force` after clearing `data/faiss/`.
+  FAISS indexes; re-ingest with `--force` after clearing `data/faiss/`. The BM25
+  index needs no rebuild step — it is derived from SQLite on demand.
 
 ## Streaming
 
@@ -649,7 +717,9 @@ One SQLite database holds four independent concerns:
 3. **Knowledge base** — the `documents` and `document_chunks` tables hold
    document text and metadata, and `rag_meta` records the embedding dimension.
    Vectors are **not** in SQLite: each namespace has its own FAISS index under
-   `RAG_INDEX_PATH` (`data/faiss/`), keyed by `document_chunks.row_id`.
+   `RAG_INDEX_PATH` (`data/faiss/`), keyed by `document_chunks.row_id`. The BM25
+   index is in memory only and derived from `document_chunks`, so SQLite remains
+   the single source of truth for chunk text.
 4. **Conversation state** — LangGraph checkpoint tables created and managed by
    `SqliteSaver.setup()`.
 
@@ -695,9 +765,18 @@ RAG-specific tests:
 | -------------------------------- | -------------------------------------------------------------- |
 | `test_loaders.py`                | text normalization, PDF pages/encryption/scanned/truncation     |
 | `test_vector_store.py`           | per-namespace index files, isolation, merge, remove, persistence |
+| `test_bm25_store.py`             | keyword/ID matching, namespaces, rebuild and deletion freshness  |
+| `test_rrf.py`                    | RRF formula, dedup, tie ordering, empty lists, Top-K limiting    |
+| `test_hybrid_search.py`          | concurrent retrieval, fusion, fallback, lifecycle, metadata      |
 | `test_documents_repository.py`   | document/chunk SQL, page round-trip, delete, schema guards      |
 | `test_document_service.py`       | ingest, dedupe, `force`, limits, compensation on index failure   |
 | `test_document_tools.py`         | tool JSON shapes and error strings                              |
+
+Run just the hybrid-search tests:
+
+```bash
+uv run pytest tests/test_rrf.py tests/test_bm25_store.py tests/test_hybrid_search.py -v
+```
 
 Notable assertions: unknown slash commands are never forwarded to the LLM, plain
 text always is, secrets never appear in status output, and both the
@@ -733,6 +812,7 @@ uv run python -m compileall -q src/agentic_chatbot
 - [x] Emerald-grid design system with neural-network background
 - [x] Command registry with autocomplete, help, and fuzzy suggestions
 - [x] Retrieval-augmented generation (FAISS, one index per namespace)
+- [x] Hybrid search: BM25 + FAISS fused with Reciprocal Rank Fusion
 - [x] PDF ingestion with page-level citations
 - [ ] FastAPI backend integration
 - [ ] Agentic decision-making
@@ -755,8 +835,10 @@ email, calendar, currency, …) that return `"mock": true` data until real
 credentials are configured. Notes are stored in SQLite per conversation, so they
 survive restarts and stay private to each thread. Documents are ingested with
 `/ingest` (Markdown, text, reStructuredText, PDF), embedded with OpenAI, and
-searched through one FAISS index per namespace. Add a tool to `registry.py` to
-expose it to the model, or a command to `cli/commands.py` to expose it to the
-user. LangSmith tracing is available when enabled through `.env`. FastAPI is not
-part of the current runtime; it is the next planned milestone, and
-`ARCHITECTURE.md` documents how to wire it in without touching the services.
+retrieved by hybrid search — FAISS vector similarity and BM25 keyword matching
+fused with Reciprocal Rank Fusion, one index pair per namespace. Add a tool to
+`registry.py` to expose it to the model, or a command to `cli/commands.py` to
+expose it to the user. LangSmith tracing is available when enabled through
+`.env`. FastAPI is not part of the current runtime; it is the next planned
+milestone, and `ARCHITECTURE.md` documents how to wire it in without touching
+the services.

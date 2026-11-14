@@ -117,6 +117,49 @@ def test_stats(repository):
     }
 
 
+def test_list_chunks_returns_namespace_content_in_id_order(repository):
+    _, alpha_ids = repository.replace_document(
+        "alpha", "docs/a.md", "a", "h", 1, [Chunk("first"), Chunk("second")]
+    )
+    repository.replace_document(
+        "beta", "docs/b.md", "b", "h", 1, [Chunk("elsewhere")]
+    )
+
+    assert repository.list_chunks("alpha") == [
+        (alpha_ids[0], "first"),
+        (alpha_ids[1], "second"),
+    ]
+    assert repository.list_chunks("missing") == []
+
+
+def test_chunks_fingerprint_tracks_inserts_and_deletes(repository):
+    empty = repository.chunks_fingerprint("alpha")
+    document, alpha_ids = repository.replace_document(
+        "alpha", "docs/a.md", "a", "h", 1, [Chunk("one"), Chunk("two")]
+    )
+    populated = repository.chunks_fingerprint("alpha")
+
+    assert empty == (0, 0, 0)
+    assert populated == (2, alpha_ids[-1], sum(alpha_ids))
+
+    repository.delete_document(document.doc_id)
+
+    assert repository.chunks_fingerprint("alpha") == (0, 0, 0)
+
+
+def test_chunks_fingerprint_changes_fingerprint_on_reingest(repository):
+    repository.replace_document(
+        "alpha", "docs/a.md", "a", "h1", 1, [Chunk("one")]
+    )
+    before = repository.chunks_fingerprint("alpha")
+
+    repository.replace_document(
+        "alpha", "docs/a.md", "a", "h2", 1, [Chunk("one")]
+    )
+
+    assert repository.chunks_fingerprint("alpha") != before
+
+
 def test_init_schema_is_idempotent(tmp_path):
     path = tmp_path / "twice.db"
 

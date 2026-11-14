@@ -41,6 +41,8 @@ def test_container_creates_schema_and_services(container):
     assert isinstance(container.vector_store, VectorIndexStore)
     assert isinstance(container.document_service, DocumentService)
     assert container.vector_store.path_for("default").parent.is_dir()
+    assert container.document_service._search_mode == "hybrid"
+    assert container.document_service._rrf_k == 60
     tool_names = {tool.name for tool in container.tools}
     assert len(tool_names) == len(STATIC_TOOLS) + 6
     assert {

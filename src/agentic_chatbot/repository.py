@@ -324,6 +324,36 @@ class DocumentsRepository:
         ).fetchall()
         return [int(row[0]) for row in rows]
 
+    def list_chunks(self, namespace: str) -> list[tuple[int, str]]:
+        """Return ``(row_id, content)`` for every chunk in one namespace."""
+        rows = self._cursor.execute(
+            """
+            SELECT row_id, content
+            FROM document_chunks
+            WHERE namespace = ?
+            ORDER BY row_id ASC
+            """,
+            (namespace,),
+        ).fetchall()
+        return [(int(row[0]), row[1]) for row in rows]
+
+    def chunks_fingerprint(self, namespace: str) -> tuple[int, int, int]:
+        """Cheap signature of a namespace's chunks used to detect staleness.
+
+        Any insert, delete, or replacement changes it: chunk ids are
+        auto-increment, so a re-ingest always raises the maximum (and usually the
+        count or the sum), and a deletion lowers the count.
+        """
+        row = self._cursor.execute(
+            """
+            SELECT COUNT(*), COALESCE(MAX(row_id), 0), COALESCE(SUM(row_id), 0)
+            FROM document_chunks
+            WHERE namespace = ?
+            """,
+            (namespace,),
+        ).fetchone()
+        return (int(row[0]), int(row[1]), int(row[2]))
+
     def chunks_by_ids(
         self, row_ids: Sequence[int]
     ) -> dict[int, sqlite3.Row]:

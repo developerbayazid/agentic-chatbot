@@ -116,6 +116,10 @@ class ChatbotContainer:
             max_text_bytes=settings.rag_max_text_bytes,
             max_pdf_bytes=settings.rag_max_pdf_bytes,
             max_pdf_pages=settings.rag_max_pdf_pages,
+            search_mode=settings.rag_search_mode,
+            vector_candidates=settings.rag_vector_candidates,
+            bm25_candidates=settings.rag_bm25_candidates,
+            rrf_k=settings.rag_rrf_k,
         )
         self.tools = get_tools(self.notes_repository, self.document_service)
         self.llm = create_llm(settings)

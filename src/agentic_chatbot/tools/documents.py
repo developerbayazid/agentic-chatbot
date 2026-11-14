@@ -5,7 +5,10 @@ from dataclasses import asdict
 
 from langchain_core.tools import BaseTool, tool
 
-from agentic_chatbot.services.document_service import DocumentService
+from agentic_chatbot.services.document_service import (
+    DocumentService,
+    RetrievalError,
+)
 
 
 def _to_json(payload: dict) -> str:
@@ -49,7 +52,18 @@ def create_document_tools(service: DocumentService) -> list[BaseTool]:
                 }
             )
 
-        hits = service.search(query, candidate or None, k)
+        try:
+            hits = service.search(query, candidate or None, k)
+        except RetrievalError as exc:
+            return _to_json(
+                {
+                    "query": query,
+                    "namespace": candidate or None,
+                    "count": 0,
+                    "results": [],
+                    "error": f"Retrieval failed: {exc}",
+                }
+            )
 
         if not hits:
             return _to_json(

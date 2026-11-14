@@ -1,5 +1,8 @@
 import os
 
+import pytest
+from pydantic import ValidationError
+
 from agentic_chatbot.config import Settings, export_langsmith_env
 
 LANGSMITH_KEYS = (
@@ -161,3 +164,41 @@ def test_rag_settings_read_environment(monkeypatch):
     assert settings.rag_top_k == 9
     assert settings.rag_index_path == "indexes"
     assert settings.embedding_dimensions == 3072
+
+
+def test_hybrid_search_defaults(monkeypatch):
+    for key in (
+        "RAG_SEARCH_MODE",
+        "RAG_VECTOR_CANDIDATES",
+        "RAG_BM25_CANDIDATES",
+        "RAG_RRF_K",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.rag_search_mode == "hybrid"
+    assert settings.rag_vector_candidates == 10
+    assert settings.rag_bm25_candidates == 10
+    assert settings.rag_rrf_k == 60
+
+
+def test_hybrid_search_settings_read_environment(monkeypatch):
+    monkeypatch.setenv("RAG_SEARCH_MODE", "bm25")
+    monkeypatch.setenv("RAG_VECTOR_CANDIDATES", "20")
+    monkeypatch.setenv("RAG_BM25_CANDIDATES", "30")
+    monkeypatch.setenv("RAG_RRF_K", "10")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.rag_search_mode == "bm25"
+    assert settings.rag_vector_candidates == 20
+    assert settings.rag_bm25_candidates == 30
+    assert settings.rag_rrf_k == 10
+
+
+def test_invalid_search_mode_is_rejected(monkeypatch):
+    monkeypatch.setenv("RAG_SEARCH_MODE", "semantic")
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)

@@ -1,6 +1,7 @@
 """Application configuration loaded from environment variables and .env."""
 
 import os
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -25,6 +26,10 @@ class Settings(BaseSettings):
     rag_chunk_overlap: int = 120
     rag_top_k: int = 4
     rag_min_score: float = 0.15
+    rag_search_mode: Literal["hybrid", "vector", "bm25"] = "hybrid"
+    rag_vector_candidates: int = 10
+    rag_bm25_candidates: int = 10
+    rag_rrf_k: int = 60
     docs_path: str = "docs"
     rag_index_path: str = "data/faiss"
     rag_max_text_bytes: int = 2_000_000

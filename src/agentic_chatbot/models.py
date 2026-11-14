@@ -50,6 +50,8 @@ class DocumentHit:
     page: int | None
     content: str
     score: float
+    vector_score: float | None = None
+    bm25_score: float | None = None
 
 
 @dataclass(frozen=True)

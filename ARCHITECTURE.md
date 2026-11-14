@@ -19,7 +19,9 @@ than a rewrite.
 5. Make a future FastAPI layer a thin adapter over the service layer.
 6. Route tool calls through a standard LangGraph loop backed by one registry.
 7. Support retrieval over local documents (text + PDF) without adding a second
-   database: text lives in SQLite, vectors in one FAISS index per namespace.
+   database: text lives in SQLite, vectors in one FAISS index per namespace, and
+   BM25 keyword indexes in memory — both retrievers fused with Reciprocal Rank
+   Fusion.
 
 The guiding rule: **the CLI and a future API are interchangeable presentations
 of the same services.** No business logic lives in `cli/`, and no HTTP or
@@ -67,6 +69,8 @@ agentic-chatbot/
         ├── embeddings.py        # OpenAIEmbeddings factory
         ├── loaders.py           # text/Markdown/PDF -> page-aware sections
         ├── vector_store.py      # one FAISS index per namespace
+        ├── bm25_store.py        # one BM25 index per namespace (from SQLite)
+        ├── rrf.py               # Reciprocal Rank Fusion
         ├── database.py          # SQLite connection + schema creation
         ├── models.py            # Domain dataclasses (Thread, Note, Document, ...)
         ├── repository.py        # Thread, Notes, Documents repositories
@@ -145,10 +149,11 @@ agentic-chatbot/
 - `services.chat` → compiled graph + `ThreadService` + `TitleService`
 - `services.thread` → `ThreadRepository` + `SqliteSaver`
 - `services.document` → `DocumentsRepository` + `VectorIndexStore` +
-  `Embeddings` + `loaders`
+  `BM25IndexStore` + `rrf` + `Embeddings` + `loaders`
 - `graph.workflow` → `graph.nodes` → `graph.state` (+ LangGraph `ToolNode`)
 - `tools.registry` → `tools.builtin`, `tools.notes`, `tools.documents`
-- `vector_store` → `faiss` + `numpy`; `loaders` → `pypdf`
+- `vector_store` → `faiss` + `numpy`; `bm25_store` → `rank_bm25`;
+  `loaders` → `pypdf`
 - `repository` → `models` + `sqlite3`
 
 Nothing imports the CLI, `graph/` never imports `services/`, and
@@ -194,6 +199,10 @@ class ChatbotContainer:
             chunk_overlap=settings.rag_chunk_overlap,
             top_k=settings.rag_top_k,
             min_score=settings.rag_min_score,
+            search_mode=settings.rag_search_mode,
+            vector_candidates=settings.rag_vector_candidates,
+            bm25_candidates=settings.rag_bm25_candidates,
+            rrf_k=settings.rag_rrf_k,
         )
         self.tools = get_tools(                                     # 5f
             self.notes_repository, self.document_service
@@ -230,7 +239,8 @@ class ChatbotContainer:
    5b. Build the OpenAI embeddings model (no network call at construction).
    5c. Build the documents repository over the shared connection.
    5d. Open the per-namespace FAISS index directory.
-   5e. Build the document service (ingest, chunk, embed, search).
+   5e. Build the document service (ingest, chunk, embed, search — with FAISS and
+       BM25 retrieval fused by RRF).
    5f. Load the tool registry, binding note and document tools.
    5g. Build a tool-bound copy of the model (`bind_tools`).
 6. Compile the graph exactly once, passing the bound model and the tools.
@@ -272,6 +282,10 @@ RAG settings:
 | `rag_chunk_overlap`    | `RAG_CHUNK_OVERLAP`    | `120`                     |
 | `rag_top_k`            | `RAG_TOP_K`            | `4`                       |
 | `rag_min_score`        | `RAG_MIN_SCORE`        | `0.15`                    |
+| `rag_search_mode`      | `RAG_SEARCH_MODE`      | `hybrid`                  |
+| `rag_vector_candidates` | `RAG_VECTOR_CANDIDATES` | `10`                   |
+| `rag_bm25_candidates`  | `RAG_BM25_CANDIDATES`  | `10`                      |
+| `rag_rrf_k`            | `RAG_RRF_K`            | `60`                      |
 | `docs_path`            | `DOCS_PATH`            | `docs`                    |
 | `rag_index_path`       | `RAG_INDEX_PATH`       | `data/faiss`              |
 | `rag_max_text_bytes`   | `RAG_MAX_TEXT_BYTES`   | `2000000`                 |
@@ -324,6 +338,48 @@ namespace**:
   dimension differs from the configured one raises with remediation.
 - Cross-namespace search is a merge of the per-index results.
 
+### `bm25_store.py`
+
+`BM25IndexStore(repository)` adds keyword retrieval over the **same** chunks, with
+no second database:
+
+- One lazy `rank_bm25.BM25Okapi` index per namespace, built from
+  `DocumentsRepository.list_chunks(namespace)` (`row_id`, `content`).
+- `DocumentService` uses `document_chunks.row_id` as the result id, exactly like
+  FAISS, so both retrievers share one identifier space and fuse cleanly.
+- Freshness is derived, not persisted: each cached entry stores a
+  `chunks_fingerprint(namespace)` of `(COUNT, MAX(row_id), SUM(row_id))`. Any
+  insert, delete, or re-ingest changes it, so a stale index is rebuilt on the next
+  search. `invalidate(namespace)` is also called after ingest/delete. A restart
+  therefore needs no migration — the first search rebuilds from SQLite.
+- `tokenize(text)` lowercases and splits on non-alphanumerics, so identifiers such
+  as `EMP-1042` become searchable terms (`emp`, `1042`).
+- `search(namespaces, query, k)` returns `(row_id, bm25_score)` best first, keeping
+  only positive scores; blank/termless queries, empty namespaces, unknown
+  namespaces, and empty corpora return `[]`. This method makes **no** embedding
+  call.
+- A `threading.Lock` guards the cache because the service queries it from a
+  worker thread.
+- rank_bm25's unsmoothed idf can be `<= 0` on tiny corpora, which would drop real
+  matches; such idf values are clamped to a tiny positive floor.
+
+### `rrf.py`
+
+`reciprocal_rank_fusion(rankings, k=60, limit=None)` merges one best-first id list
+per retriever:
+
+```text
+RRF(d) = sum over lists containing d of 1 / (k + rank(d))
+```
+
+- Deduplicates by id, accumulating contributions when a chunk appears in both
+  lists (a duplicate inside one list counts once).
+- Sorts by descending score, breaking ties by the best rank achieved and then by
+  id, so ordering is stable.
+- `limit` applies the final Top-K. Empty input returns `[]`; negative `k` raises.
+- It is pure and dependency-free, which makes the fusion math directly testable
+  without FAISS, SQLite, or embeddings.
+
 ### `database.py`
 
 - `create_connection(path)` — opens SQLite with `check_same_thread=False` and
@@ -345,8 +401,9 @@ namespace**:
 - `Document` — frozen dataclass: `doc_id`, `namespace`, `source`, `title`,
   `content_hash`, `size_bytes`, timestamps.
 - `DocumentHit` — frozen dataclass returned by retrieval: chunk/document
-  identity, `namespace`, `title`, `source`, `chunk_index`, `page`, `content`,
-  and `score` (cosine similarity, higher is better).
+  identity, `namespace`, `title`, `source`, `chunk_index`, `page`, `content`, and
+  `score` (often the RRF fusion score), plus optional `vector_score` (cosine
+  similarity) and `bm25_score` for the individual retrievers.
 - `TurnEvent` — frozen dataclass emitted by `ChatService.stream_turn`:
   - `type="token"`, `content="..."` for each streamed chunk
   - `type="tool_call"`, `name=...`, `content=<JSON args>` when the model requests
@@ -399,6 +456,8 @@ so they survive process restarts.
 | `list_documents(namespace=None)` / `list_namespaces()` | listing |
 | `replace_document(..., chunks)` | one transaction: upsert `documents`, delete old chunks, insert new chunks (with `page`); returns the document and the new chunk `row_id`s |
 | `chunk_ids(doc_id)` | vector ids for a document (read before a replace) |
+| `list_chunks(namespace)` | `(row_id, content)` for building the BM25 corpus |
+| `chunks_fingerprint(namespace)` | `(COUNT, MAX(row_id), SUM(row_id))` staleness check |
 | `chunks_by_ids(ids)` | joined chunk + document rows keyed by `row_id` |
 | `delete_document(doc_id)` | delete chunks, then the document |
 | `stats()` | document/chunk/namespace counts |
@@ -440,9 +499,32 @@ Ingestion and retrieval, independent of the CLI:
   `vector_store.replace`. If the index write fails, the SQL rows are deleted so
   no orphan chunk can outlive a failed index update.
 - `search(query, namespace=None, k=None)` → `DocumentHit`s ordered by score;
-  blank query returns `[]`, `k` is clamped to 1–10, and hits below
-  `rag_min_score` are filtered so "nothing relevant" is representable.
-- `list_documents`, `list_namespaces`, `delete_document`, `stats`.
+  blank query returns `[]`, `k` is clamped to 1–10. The configured
+  `search_mode` selects the path:
+  - `vector` — FAISS cosine search, with hits below `rag_min_score` filtered so
+    "nothing relevant" stays representable (this is the pre-hybrid behaviour).
+  - `bm25` — BM25 keyword search with no embedding call.
+  - `hybrid` — runs both concurrently and fuses them with RRF. The container
+    injects this as the application default via `RAG_SEARCH_MODE`; the
+    constructor's own fallback stays `vector` so a directly constructed service
+    keeps the pre-hybrid behaviour.
+- `search_vector()`, `search_bm25()`, `search_hybrid()` expose each strategy
+  directly, so the modes can be compared or tested independently of the
+  configured default.
+- **Hybrid retrieval:** a two-worker `ThreadPoolExecutor` runs `_retrieve_vector`
+  and `_retrieve_bm25` at the same time, each pulling `vector_candidates` /
+  `bm25_candidates` results. Their id rankings are fused with
+  `reciprocal_rank_fusion(..., k=rrf_k, limit=k)` and joined back to SQLite rows.
+  A failure in one retriever is logged and the other still contributes; only a
+  failure of both raises `RetrievalError`. `RAG_MIN_SCORE` is a cosine threshold,
+  so it applies only in `vector` mode — RRF scores are on a different scale.
+- Each `DocumentHit` carries `score` (the RRF score in hybrid mode, otherwise the
+  retriever score) plus `vector_score` and `bm25_score` so the contribution of
+  each retriever is visible.
+- `list_documents`, `list_namespaces`, `delete_document`, `stats` (which now also
+  reports loaded BM25 index sizes under `bm25_indexes`).
+- Ingest and delete invalidate the namespace's BM25 cache; the fingerprint check
+  makes that correctness independent of the explicit invalidation.
 
 ### `services/chat_service.py`
 
@@ -524,13 +606,15 @@ told never to claim a search it did not perform.
   therefore persist across turns and restarts while staying private to the thread
   that created them.
 - `documents.py` — retrieval tools via `create_document_tools(service)`:
-  - `search_documents(query, namespace="", k=4)` — cosine search over the
-    ingested knowledge base; returns JSON hits with `title`, `source`,
-    `namespace`, `chunk_index`, `page`, `score`, and `content`. Blank queries and
-    no-hit results are plain strings, never exceptions. An unknown namespace
-    returns `"error": "Unknown namespace."` plus the valid `namespaces` list
-    instead of a silent empty result, and an empty namespace searches all of
-    them.
+  - `search_documents(query, namespace="", k=4)` — hybrid retrieval over the
+    ingested knowledge base (FAISS vectors + BM25 keywords fused with RRF, per
+    `RAG_SEARCH_MODE`); returns JSON hits with `title`, `source`, `namespace`,
+    `chunk_index`, `page`, `score`, `vector_score`, `bm25_score`, and `content`.
+    Blank queries and no-hit results are plain strings, never exceptions. An
+    unknown namespace returns `"error": "Unknown namespace."` plus the valid
+    `namespaces` list instead of a silent empty result, and an empty namespace
+    searches all of them. A total retrieval failure (both retrievers down) returns
+    a `"Retrieval failed: ..."` error instead of raising.
   - `list_documents(namespace="")` — known namespaces plus document metadata.
     Namespaces are chosen at ingest time, so the model can discover them here.
 - `mocks.py` — simulated implementations of common API-backed tools:
@@ -751,9 +835,31 @@ VectorIndexStore.replace()          (one FAISS index per namespace:
 
 /search_documents(query, namespace, k)
       ▼
-OpenAIEmbeddings.embed_query → VectorIndexStore.search(namespaces, vector, k)
+DocumentService.search()  — dispatch on RAG_SEARCH_MODE
+      │
+      ├─ hybrid (default): two workers run concurrently
+      │     ┌──────────────────────────────┐
+      │     │ FAISS vector search          │
+      │     │ embed_query → normalize →    │
+      │     │ per-namespace IndexFlatIP    │
+      │     │ → top vector_candidates      │
+      │     └──────────────┬───────────────┘
+      │     ┌──────────────┴───────────────┐
+      │     │ BM25 keyword search          │
+      │     │ tokenize → BM25Okapi per ns  │
+      │     │ → top bm25_candidates        │
+      │     └──────────────┬───────────────┘
+      │                    ▼
+      │     reciprocal_rank_fusion([vec_ids, bm25_ids], k=rrf_k, limit=k)
+      │                    ▼
+      │     fused row_ids (dedup, accumulated RRF score)
+      │
+      ├─ vector: FAISS only → filter score >= rag_min_score
+      └─ bm25:   BM25 only (no embedding call)
       ▼
-DocumentsRepository.chunks_by_ids → filter score >= rag_min_score → DocumentHits
+DocumentsRepository.chunks_by_ids → DocumentHits
+(title, source, namespace, chunk_index, page, content, score,
+ vector_score, bm25_score → JSON tool result)
 ```
 
 ### Creating / switching / deleting threads
@@ -844,14 +950,19 @@ CREATE TABLE IF NOT EXISTS rag_meta (
 ```
 
 SQLite is authoritative for document text and metadata; it stores **no
-vectors**. `document_chunks.row_id` is the id stored in FAISS, so one index
-entry maps to exactly one SQL row, and `page` is `NULL` for text files.
+vectors** and no BM25 structures. `document_chunks.row_id` is the id stored in
+FAISS **and** returned by BM25, so one index entry maps to exactly one SQL row,
+and `page` is `NULL` for text files.
 
 Vectors live in `RAG_INDEX_PATH` (`data/faiss/` by default), one
-`{slug}-{sha1}.faiss` file per namespace. `rag_meta` records the embedding
-dimension and index format version; changing `EMBEDDING_DIMENSIONS` (or the
-model) after ingestion raises with remediation instead of mixing vector sizes.
-Deleting documents removes the matching ids from their namespace index, and an
+`{slug}-{sha1}.faiss` file per namespace. The BM25 index is **not persisted at
+all**: `BM25IndexStore` builds it from `document_chunks` in memory and rebuilds
+it whenever a namespace's `(COUNT, MAX(row_id), SUM(row_id))` fingerprint
+changes, so SQLite stays the only source of truth and a restart simply rebuilds
+on first search. `rag_meta` records the embedding dimension and index format
+version; changing `EMBEDDING_DIMENSIONS` (or the model) after ingestion raises
+with remediation instead of mixing vector sizes. Deleting documents removes the
+matching ids from their namespace index and invalidates the BM25 cache, and an
 index that becomes empty deletes its file. Re-ingesting unchanged files is
 skipped by content hash; `/ingest ... --force` re-embeds to rebuild an index.
 
@@ -1038,7 +1149,12 @@ where that change belongs.
   (`add`, `replace`, `remove`, `search`, `stats`); `DocumentService` and the
   tools stay the same.
 - **Different retrieval policy** — change `DocumentService.search` (top-k,
-  minimum score, filtering); the tool surface is already fixed.
+  minimum score, filtering), or switch `RAG_SEARCH_MODE` between `hybrid`,
+  `vector`, and `bm25`. The tool surface is already fixed.
+- **Different fusion** — replace `rrf.reciprocal_rank_fusion` with another
+  rank-fusion strategy; `DocumentService._hybrid_search` is the only caller.
+- **Different keyword analyzer** — change `bm25_store.tokenize`; corpus building
+  and query tokenization share it.
 - **New presentation** — add a FastAPI (or any other) module that calls the same
   services; never duplicate SQL or graph logic there.
 - **More conversation metadata** — extend the `threads` schema and `Thread`
@@ -1097,6 +1213,20 @@ where that change belongs.
     `/ingest docs <namespace> --force`. Index files are written atomically and
     guarded by a thread lock, but two processes must not write the same
     namespace index.
+16. **BM25 indexes are rebuilt in memory** — `BM25IndexStore` keeps one index per
+    namespace per process, built from SQLite on first use and rebuilt when the
+    chunk fingerprint changes. The rebuild cost is proportional to the namespace
+    size, so a very large namespace pays it once per process (and once per
+    document change); it is never rebuilt on every query. Indexes are not shared
+    across processes.
+17. **RRF scores are not similarities** — in hybrid mode `score` is a small RRF
+    value (roughly `1/61` per contributing list), so `RAG_MIN_SCORE` is ignored
+    there; use `vector_score`/`bm25_score` to inspect each retriever. `RAG_MIN_SCORE`
+    still applies in `vector` mode.
+18. **Hybrid degrades rather than fails** — if one retriever raises (an embedding
+    outage, a corrupt FAISS index), the other still returns results and the
+    failure is logged. Only when both fail does the tool report
+    `Retrieval failed: ...`.
 
 ---
 
@@ -1115,7 +1245,7 @@ uv run python -m agentic_chatbot
 uv run python -m compileall -q src/agentic_chatbot
 
 # RAG dependency sanity
-uv run python -c "import faiss, pypdf; print(faiss.__version__, pypdf.__version__)"
+uv run python -c "import faiss, pypdf, rank_bm25; print(faiss.__version__, pypdf.__version__)"
 ```
 
 Ingest and query from the CLI (after putting files in `docs/`):
@@ -1131,6 +1261,12 @@ Run the suite with:
 
 ```bash
 uv run pytest
+```
+
+Run only the hybrid-retrieval tests:
+
+```bash
+uv run pytest tests/test_rrf.py tests/test_bm25_store.py tests/test_hybrid_search.py -v
 ```
 
 Tests use `tmp_path` SQLite databases plus fake graph, LLM, title, thread,
@@ -1151,6 +1287,9 @@ RAG-specific tests:
 | -------------------------------- | ----- |
 | `test_loaders.py`                | text normalization, PDF pages/encryption/scanned/truncation, real pypdf parse |
 | `test_vector_store.py`           | per-namespace index files, isolation, merge ordering, replace/remove, persistence, dimension guard |
+| `test_bm25_store.py`             | tokenization, keyword/ID/code matching, namespaces, rebuild and deletion freshness |
+| `test_rrf.py`                    | RRF formula, dedup, score accumulation, tie ordering, empty lists, Top-K |
+| `test_hybrid_search.py`          | concurrent retrieval, fusion, per-retriever fallback, metadata, lifecycle |
 | `test_documents_repository.py`   | document/chunk SQL, page round-trip, delete, namespace listing, idempotent schema |
 | `test_document_service.py`       | ingest, dedupe, `force`, page provenance, limits, compensation on index failure |
 | `test_document_tools.py`         | `search_documents` / `list_documents` JSON shapes and error strings |

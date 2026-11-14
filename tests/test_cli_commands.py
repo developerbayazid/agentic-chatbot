@@ -8,6 +8,8 @@ from agentic_chatbot.cli import console as ui
 from agentic_chatbot.cli.commands import CATEGORIES, COMMANDS, dispatch
 from agentic_chatbot.cli.registry import normalize
 from agentic_chatbot.cli.session import ChatSession
+from agentic_chatbot.services.document_service import DocumentService
+from tests.fakes import FakeEmbeddings
 
 
 @pytest.fixture
@@ -44,6 +46,8 @@ def test_documented_commands_are_registered():
         "/help",
         "/clear",
         "/status",
+        "/ingest",
+        "/documents",
         "/version",
         "/exit",
         "/new",
@@ -346,3 +350,81 @@ def full_session(container, console):
 
 def test_commands_module_exposes_categories():
     assert command_module.CATEGORIES == CATEGORIES
+
+
+@pytest.fixture
+def rag_session(container, console):
+    container.document_service = DocumentService(
+        container.documents_repository,
+        container.vector_store,
+        FakeEmbeddings(dimensions=container.settings.embedding_dimensions),
+        chunk_size=100,
+        chunk_overlap=10,
+    )
+    thread = container.thread_service.create_thread("RAG chat")
+    return ChatSession(
+        container=container,
+        console=console,
+        current_thread_id=thread.thread_id,
+    )
+
+
+def test_ingest_command_indexes_a_file(rag_session, console, tmp_path):
+    source = tmp_path / "handbook.md"
+    source.write_text("onboarding starts on monday", encoding="utf-8")
+
+    dispatch(rag_session, f"/ingest {source} handbook")
+
+    text = output(console)
+    assert "INGESTED" in text
+    assert "indexed   1" in text
+    assert "namespace handbook" in text
+
+
+def test_ingest_command_reports_missing_path(rag_session, console, tmp_path):
+    dispatch(rag_session, f"/ingest {tmp_path / 'missing'}")
+
+    assert "Cannot ingest" in output(console)
+
+
+def test_ingest_command_accepts_force_flag(rag_session, console, tmp_path):
+    source = tmp_path / "handbook.md"
+    source.write_text("alpha", encoding="utf-8")
+    dispatch(rag_session, f"/ingest {source} handbook")
+
+    fresh = Console(width=100, record=True)
+    rag_session.console = fresh
+    dispatch(rag_session, f"/ingest {source} handbook --force")
+
+    assert "indexed   1" in fresh.export_text()
+
+
+def test_documents_command_lists_indexed_files(rag_session, console, tmp_path):
+    source = tmp_path / "handbook.md"
+    source.write_text("alpha", encoding="utf-8")
+    dispatch(rag_session, f"/ingest {source} handbook")
+
+    fresh = Console(width=100, record=True)
+    rag_session.console = fresh
+    dispatch(rag_session, "/documents")
+
+    text = fresh.export_text()
+    assert "DOCUMENTS" in text
+    assert "handbook" in text
+    assert rag_session.document_service.list_documents()[0].source.endswith(
+        "handbook.md"
+    )
+
+
+def test_documents_command_reports_an_empty_knowledge_base(rag_session, console):
+    dispatch(rag_session, "/documents")
+
+    assert "No documents indexed" in output(console)
+
+
+def test_help_documents_the_ingest_command(session, console):
+    dispatch(session, "/help ingest")
+
+    text = output(console)
+    assert "/ingest [path] [namespace] [--force]" in text
+    assert "Chunks, embeds, and indexes" in text

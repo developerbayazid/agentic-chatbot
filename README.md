@@ -6,10 +6,12 @@ LangChain, and LangGraph.
 The application is currently a modular, interactive **CLI**. It preserves
 thread-isolated conversations in SQLite through LangGraph's `SqliteSaver`,
 generates conversation titles automatically, streams model responses token by
-token, and supports tool calling through a LangGraph tool loop. Optional
-LangSmith tracing sends runs to LangSmith for debugging and monitoring. The code
-is split into presentation, service, graph, and persistence layers so a FastAPI
-backend can be added later without rewriting business logic.
+token, and supports tool calling through a LangGraph tool loop. It also performs
+**retrieval-augmented generation** over local Markdown, text, and PDF files,
+using OpenAI embeddings and one FAISS index per namespace. Optional LangSmith
+tracing sends runs to LangSmith for debugging and monitoring. The code is split
+into presentation, service, graph, retrieval, and persistence layers so a
+FastAPI backend can be added later without rewriting business logic.
 
 The terminal experience is a premium **emerald-grid** interface built with
 **Rich** and **prompt_toolkit**: a framed welcome hero with a neural-network grid
@@ -29,6 +31,8 @@ For the full design and migration plan, see [`ARCHITECTURE.md`](./ARCHITECTURE.m
 - Preserve conversation history and thread isolation with SQLite.
 - Keep business logic framework-agnostic so it is reusable by a CLI or an API.
 - Provide a tool-calling loop with a single registry of local and mock-backed tools.
+- Add retrieval-augmented generation over local documents with per-namespace
+  vector indexes and page-level PDF citations.
 - Add a FastAPI backend and frontend later without restructuring the core.
 
 ## Tech Stack
@@ -40,11 +44,13 @@ For the full design and migration plan, see [`ARCHITECTURE.md`](./ARCHITECTURE.m
 | **LangGraph**                     | Graph-based workflow orchestration       |
 | **LangGraph SQLite Checkpointer** | Conversation state persistence           |
 | **LangSmith**                     | Tracing and observability                |
-| **OpenAI**                        | Large language models                    |
+| **OpenAI**                        | Chat models and `text-embedding-3-small` embeddings |
+| **FAISS**                         | One vector index per namespace (RAG)     |
+| **pypdf**                         | PDF text extraction (no OCR)             |
 | **Pydantic / pydantic-settings**  | Configuration loading and validation     |
 | **Rich**                          | Terminal panels, tables, Markdown, color |
 | **prompt_toolkit**                | Input, autocomplete, history, shortcuts  |
-| **SQLite**                        | Thread metadata and checkpoint storage   |
+| **SQLite**                        | Threads, notes, document text/metadata, checkpoints |
 | **uv**                            | Package and project management           |
 | **FastAPI / Uvicorn**             | Planned HTTP layer (not implemented yet) |
 | **pytest**                        | Automated tests (no OpenAI calls)        |
@@ -59,6 +65,8 @@ agentic-chatbot/
 ├── uv.lock
 ├── .env.example
 ├── chatbot_memory.db            # SQLite: thread metadata + LangGraph checkpoints
+├── docs/                        # Documents indexed by /ingest
+├── data/faiss/                  # One FAISS index file per namespace
 │
 ├── src/
 │   └── agentic_chatbot/
@@ -67,9 +75,12 @@ agentic-chatbot/
 │       ├── config.py            # settings + LangSmith env export
 │       ├── container.py         # Composition root (wires all resources)
 │       ├── llm.py               # ChatOpenAI factory
+│       ├── embeddings.py        # OpenAIEmbeddings factory
+│       ├── loaders.py           # text/Markdown/PDF -> page-aware sections
+│       ├── vector_store.py      # per-namespace FAISS indexes
 │       ├── database.py          # SQLite connection + schema
-│       ├── models.py            # Thread, Note, and TurnEvent dataclasses
-│       ├── repository.py        # ThreadRepository + NotesRepository
+│       ├── models.py            # Thread, Note, Document, TurnEvent dataclasses
+│       ├── repository.py        # Thread, Notes, and Documents repositories
 │       │
 │       ├── cli/                 # Terminal presentation (Rich + prompt_toolkit)
 │       │   ├── __init__.py      # public exports: main, run_session, dispatch
@@ -91,18 +102,20 @@ agentic-chatbot/
 │       ├── services/
 │       │   ├── chat_service.py   # streaming turns + history
 │       │   ├── thread_service.py # thread lifecycle
-│       │   └── title_service.py  # automatic titles
+│       │   ├── title_service.py  # automatic titles
+│       │   └── document_service.py # ingestion, chunking, retrieval
 │       └── tools/
 │           ├── builtin.py        # calculator, get_current_time
 │           ├── utilities.py      # local helpers (hash, base64, units, ...)
 │           ├── life.py           # loan, tip, BMI, age, timezone, fuel
 │           ├── notes.py          # database-backed note tools
+│           ├── documents.py      # search_documents / list_documents
 │           ├── mocks.py          # mocked API tools (weather, search, ...)
-│           └── registry.py       # STATIC_TOOLS / get_tools(repo)
+│           └── registry.py       # STATIC_TOOLS / get_tools(repo, documents)
 │
 ├── tests/                       # Pytest suite (fakes + temporary SQLite)
 ├── notebooks/                   # Learning notebooks
-└── data/                        # Optional alternate database location
+└── data/                        # Local database + FAISS index files
 ```
 
 ## Architecture Summary
@@ -110,21 +123,25 @@ agentic-chatbot/
 The application follows a one-way dependency flow:
 
 ```text
-cli/  →  container.py  →  services  →  graph / repository  →  SQLite
+cli/  →  container.py  →  services  →  graph / repository / retrieval  →  SQLite + FAISS
 ```
 
 - **Presentation** (`cli/`) — reads input and renders output only. No
   conversation logic, SQL, or graph code lives here.
-- **Services** (`services/`) — chat orchestration, thread lifecycle, titles.
-  Independent of any UI or HTTP framework.
+- **Services** (`services/`) — chat orchestration, thread lifecycle, titles, and
+  document ingestion/retrieval. Independent of any UI or HTTP framework.
 - **Graph** (`graph/`) — LangGraph state, the chat node, the `ToolNode`, and the
   compiled chatbot.
+- **Retrieval** (`loaders.py`, `vector_store.py`, `embeddings.py`) — text/PDF
+  loading, chunk embeddings, and one FAISS index per namespace.
 - **Tools** (`tools/`) — `@tool` implementations registered in `registry.py` and
-  executed by LangGraph's `ToolNode`.
-- **Persistence** (`repository.py`, `database.py`) — thread metadata SQL.
+  executed by LangGraph's `ToolNode`, including `search_documents`.
+- **Persistence** (`repository.py`, `database.py`) — thread, note, and document
+  metadata/text SQL. Vectors are not stored in SQLite.
 - **Checkpointer** — `SqliteSaver` stores conversation messages and graph state.
 - **Container** (`container.py`) — builds and owns the SQLite connection,
-  checkpointer, LLM, tool-bound LLM, compiled graph, and services.
+  checkpointer, LLM, embeddings, vector store, document service, tool-bound LLM,
+  compiled graph, and services.
 
 `ARCHITECTURE.md` explains each module, the request flow, the streaming event
 contract, and the exact steps to add FastAPI later.
@@ -161,6 +178,22 @@ DATABASE_PATH=chatbot_memory.db
 LLM_MODEL=gpt-4o-mini
 LLM_TEMPERATURE=0.0
 SYSTEM_PROMPT=You are a helpful AI assistant.
+```
+
+Optional retrieval / RAG settings (defaults shown):
+
+```env
+EMBEDDINGS_MODEL=text-embedding-3-small
+EMBEDDING_DIMENSIONS=1536
+RAG_CHUNK_SIZE=800
+RAG_CHUNK_OVERLAP=120
+RAG_TOP_K=4
+RAG_MIN_SCORE=0.15
+DOCS_PATH=docs
+RAG_INDEX_PATH=data/faiss
+RAG_MAX_TEXT_BYTES=2000000
+RAG_MAX_PDF_BYTES=20000000
+RAG_MAX_PDF_PAGES=200
 ```
 
 Optional LangSmith tracing (defaults shown):
@@ -229,7 +262,7 @@ framed composer for input.
 
   ● MODEL    gpt-4o-mini       ● STORAGE  SQLite · connected
   ● GRAPH    ready             ● TRACING  on
-  ● TOOLS    36                ● SESSION  0367932
+  ● TOOLS    38                ● SESSION  0367932
 
   /help commands  ·  /threads conversations  ·  /new new conversation
 
@@ -386,6 +419,8 @@ suggestions.
 | `/help`    | Show commands, or details for one command  | General      |
 | `/clear`   | Clear the terminal screen                  | General      |
 | `/status`  | Show model, database, graph, and tracing   | General      |
+| `/ingest`  | Index Markdown, text, and PDF files        | General      |
+| `/documents` | List indexed documents and namespaces    | General      |
 | `/version` | Show the application version               | General      |
 | `/exit`    | Exit the chatbot                           | General      |
 | `/new`     | Create a new conversation                   | Conversation |
@@ -467,9 +502,9 @@ Guidelines:
 ## Tools
 
 The tool-bound LLM receives every schema returned by
-`get_tools(notes_repository)`. When it emits tool calls, LangGraph's `ToolNode`
-executes them and routes back to the chat node for a final answer. Tool activity
-is printed as it happens:
+`get_tools(notes_repository, document_service)`. When it emits tool calls,
+LangGraph's `ToolNode` executes them and routes back to the chat node for a final
+answer. Tool activity is printed as it happens:
 
 ```text
 BAYAZID AI
@@ -478,7 +513,7 @@ BAYAZID AI
 It is currently 27°C in Dhaka.
 ```
 
-### Registered tools (36)
+### Registered tools (38)
 
 | Category            | Module         | Tools                                                                                                                                                                                                 |
 | ------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -486,6 +521,7 @@ It is currently 27°C in Dhaka.
 | Local utilities     | `utilities.py` | `convert_units`, `generate_uuid`, `generate_password`, `hash_text`, `base64_encode`, `base64_decode`, `format_json`, `regex_search`, `summarize_text`                                                 |
 | Everyday life       | `life.py`      | `calculate_loan_payment`, `calculate_tip_split`, `calculate_bmi`, `calculate_age`, `days_between`, `convert_timezone`, `estimate_fuel_cost`                                                            |
 | Notes (per thread)  | `notes.py`     | `save_note`, `list_notes`, `search_notes`, `delete_note` — scoped to the active conversation                                                                                                           |
+| Retrieval (RAG)     | `documents.py` | `search_documents`, `list_documents` — cosine search over ingested text and PDFs, one FAISS index per namespace                                                                                        |
 | Mock API services   | `mocks.py`     | `web_search`, `fetch_url`, `get_news`, `get_weather`, `get_stock_price`, `convert_currency`, `send_email`, `send_slack_message`, `create_calendar_event`, `list_calendar_events`, `translate_text`, `find_recipe`, `get_holidays`, `track_package` |
 
 All tools that need an external service (`mocks.py`) return simulated data and
@@ -509,9 +545,9 @@ def word_count(text: str) -> str:
 
 Then append `word_count` to `STATIC_TOOLS` in
 `src/agentic_chatbot/tools/registry.py`. `create_llm` and `ToolNode` pick it up
-automatically; no graph, service, or CLI changes are needed. Tools that need a
-repository (like the note tools) are built by a `create_*_tools()` factory and
-returned from `get_tools(repository)` instead.
+automatically; no graph, service, or CLI changes are needed. Tools that need
+shared state (notes, retrieval) are built by a `create_*_tools()` factory and
+returned from `get_tools(notes_repository, document_service)` instead.
 
 ### Example prompts
 
@@ -528,6 +564,34 @@ returned from `get_tools(repository)` instead.
 - "Convert 250 USD to BDT."
 - "Create a calendar event 'Design review' on 2026-12-01 at 10:00 for 45 minutes."
 - "Search the web for LangGraph tool calling best practices."
+- "According to my handbook, what's the onboarding process?" (after `/ingest`)
+- "What does the policy PDF say about page 4?"
+
+## Knowledge Base (RAG)
+
+Supported files: `.md`, `.markdown`, `.txt`, `.rst`, and `.pdf`. Drop them in
+`docs/` (or any folder) and index them:
+
+```text
+/ingest docs handbook          # index docs/ into the "handbook" namespace
+/documents                     # list namespaces and indexed files
+/ingest docs policies --force  # re-embed and rebuild the index
+```
+
+Each namespace has its own FAISS index file under `data/faiss/`. Text files use
+one section; PDFs are split per page so results cite a page number. Unchanged
+files are skipped by content hash; `--force` overrides that. `search_documents`
+is exposed to the model, which calls it for questions about the ingested
+material and cites title/source/page.
+
+Notes:
+
+- Scanned/image-only PDFs have no text layer and are reported as ingest errors —
+  there is no OCR.
+- `RAG_MIN_SCORE` (default `0.15`) filters weak hits so "nothing relevant" is a
+  real answer instead of the nearest unrelated chunk.
+- Changing `EMBEDDINGS_MODEL` or `EMBEDDING_DIMENSIONS` invalidates existing
+  indexes; re-ingest with `--force` after clearing `data/faiss/`.
 
 ## Streaming
 
@@ -562,20 +626,27 @@ are not overwritten.
 
 ## SQLite Persistence
 
-One SQLite database holds three independent concerns:
+One SQLite database holds four independent concerns:
 
 1. **Thread metadata** — the `threads` table (`thread_id`, `title`,
    `created_at`, `updated_at`), managed by `ThreadRepository`.
 2. **Notes** — the `notes` table (`note_id`, `thread_id`, `title`, `content`,
    `created_at`), managed by `NotesRepository`. Notes survive restarts and are
    private to the conversation that created them.
-3. **Conversation state** — LangGraph checkpoint tables created and managed by
+3. **Knowledge base** — the `documents` and `document_chunks` tables hold
+   document text and metadata, and `rag_meta` records the embedding dimension.
+   Vectors are **not** in SQLite: each namespace has its own FAISS index under
+   `RAG_INDEX_PATH` (`data/faiss/`), keyed by `document_chunks.row_id`.
+4. **Conversation state** — LangGraph checkpoint tables created and managed by
    `SqliteSaver.setup()`.
 
 Deleting a thread removes its checkpoints first, then its metadata. Deleting a
-thread while it is active creates a replacement conversation. Notes are kept
-until explicitly deleted with `delete_note`, but they are only visible from
-their own thread. Deleting a thread does not delete its notes.
+thread while it is active creates a replacement conversation. Notes and
+documents are kept until explicitly deleted, and notes are only visible from
+their own thread. Deleting a thread does not delete its notes or documents.
+
+Back up `data/faiss/` together with the database, or rebuild it after a loss
+with `/ingest docs <namespace> --force`.
 
 ## Running Tests
 
@@ -588,10 +659,11 @@ it never calls the OpenAI API and never touches `chatbot_memory.db`. It covers
 configuration precedence, container wiring and schema creation, thread lifecycle
 and ordering, checkpoint cleanup on delete, streaming and title generation, tool
 execution and event emission, the individual tool implementations (calculators,
-utilities, notes, and mocks), notes persistence across SQLite connections, CLI
-rendering, the interactive command loop, and package entry points.
+utilities, notes, documents, and mocks), notes persistence across SQLite
+connections, document ingestion (text and PDF), per-namespace FAISS indexing and
+retrieval, CLI rendering, the interactive command loop, and package entry points.
 
-The CLI has dedicated coverage across these test files (234 of the 327 tests):
+The CLI has dedicated coverage across these test files:
 
 | Test file                        | Covers                                                         |
 | -------------------------------- | -------------------------------------------------------------- |
@@ -603,6 +675,16 @@ The CLI has dedicated coverage across these test files (234 of the 327 tests):
 | `test_cli_banner.py`             | emerald theme, the framed welcome hero, and the status readout  |
 | `test_cli_rendering.py`          | background grid, framed input, and timed tool feedback          |
 | `test_cli_picker.py`             | session picker: timing, filtering, selection, keyboard drive    |
+
+RAG-specific tests:
+
+| Test file                        | Covers                                                         |
+| -------------------------------- | -------------------------------------------------------------- |
+| `test_loaders.py`                | text normalization, PDF pages/encryption/scanned/truncation     |
+| `test_vector_store.py`           | per-namespace index files, isolation, merge, remove, persistence |
+| `test_documents_repository.py`   | document/chunk SQL, page round-trip, delete, schema guards      |
+| `test_document_service.py`       | ingest, dedupe, `force`, limits, compensation on index failure   |
+| `test_document_tools.py`         | tool JSON shapes and error strings                              |
 
 Notable assertions: unknown slash commands are never forwarded to the LLM, plain
 text always is, secrets never appear in status output, and both the
@@ -637,6 +719,8 @@ uv run python -m compileall -q src/agentic_chatbot
 - [x] Professional terminal UI (Rich + prompt_toolkit)
 - [x] Emerald-grid design system with neural-network background
 - [x] Command registry with autocomplete, help, and fuzzy suggestions
+- [x] Retrieval-augmented generation (FAISS, one index per namespace)
+- [x] PDF ingestion with page-level citations
 - [ ] FastAPI backend integration
 - [ ] Agentic decision-making
 - [ ] Cross-thread memory management
@@ -651,13 +735,15 @@ SQLite persistence all run through the service layer under
 `src/agentic_chatbot/`. The presentation layer is a `cli/` package: a centralised
 emerald design system (`theme.py`), an emerald-grid background renderer
 (`background.py`), a Rich renderer, a prompt_toolkit input layer, and one command
-table. Thirty-six tools are registered in
-`src/agentic_chatbot/tools/` — local utilities plus mock implementations of
-common API-backed tools (weather, search, email, calendar, currency, …) that
-return `"mock": true` data until real credentials are configured. Notes are
-stored in SQLite per conversation, so they survive restarts and stay private to
-each thread. Add a tool to `registry.py` to expose it to the model, or a command
-to `cli/commands.py` to expose it to the user. LangSmith tracing is available
-when enabled through `.env`. FastAPI is not part of the current runtime; it is
-the next planned milestone, and `ARCHITECTURE.md` documents how to wire it in
-without touching the services.
+table. Thirty-eight tools are registered in
+`src/agentic_chatbot/tools/` — local utilities, retrieval over ingested text and
+PDFs, and mock implementations of common API-backed tools (weather, search,
+email, calendar, currency, …) that return `"mock": true` data until real
+credentials are configured. Notes are stored in SQLite per conversation, so they
+survive restarts and stay private to each thread. Documents are ingested with
+`/ingest` (Markdown, text, reStructuredText, PDF), embedded with OpenAI, and
+searched through one FAISS index per namespace. Add a tool to `registry.py` to
+expose it to the model, or a command to `cli/commands.py` to expose it to the
+user. LangSmith tracing is available when enabled through `.env`. FastAPI is not
+part of the current runtime; it is the next planned milestone, and
+`ARCHITECTURE.md` documents how to wire it in without touching the services.

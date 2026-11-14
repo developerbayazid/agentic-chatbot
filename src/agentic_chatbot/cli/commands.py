@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import platform
 from importlib import metadata
+from pathlib import Path
 
 from rich.console import Console
 from rich.text import Text
@@ -176,6 +177,61 @@ def _delete(session: ChatSession, argument: str) -> None:
         ui.success(session.console, "Thread deleted.")
 
 
+def _ingest(session: ChatSession, argument: str) -> None:
+    tokens = argument.split()
+    force = "--force" in tokens
+    tokens = [token for token in tokens if token != "--force"]
+
+    path = Path(tokens[0]) if tokens else Path(session.settings.docs_path)
+    namespace = tokens[1] if len(tokens) > 1 else "default"
+
+    result = session.document_service.ingest_path(
+        path, namespace=namespace, force=force
+    )
+
+    if result.files_seen == 0 and result.errors:
+        _, message = result.errors[0]
+        ui.error(session.console, f"Cannot ingest {path}: {message}")
+        return
+
+    ui.document(
+        session.console,
+        "Ingested",
+        f"indexed   {result.files_indexed}\n"
+        f"skipped   {result.files_skipped}\n"
+        f"chunks    {result.chunks_created}\n"
+        f"namespace {namespace}",
+    )
+
+    for warning in result.warnings:
+        ui.warning(session.console, warning)
+
+    for source, message in result.errors:
+        ui.error(session.console, f"{source}: {message}")
+
+
+def _documents(session: ChatSession, argument: str) -> None:
+    namespace = argument.strip() or None
+    documents = session.document_service.list_documents(namespace)
+
+    if not documents:
+        ui.notice(
+            session.console,
+            "No documents indexed. Use /ingest to add some.",
+        )
+        return
+
+    namespaces = session.document_service.list_namespaces()
+    lines = [f"namespaces  {', '.join(namespaces)}", ""]
+
+    for document in documents:
+        lines.append(
+            f"{document.namespace:<12} {document.title}  ·  {document.source}"
+        )
+
+    ui.document(session.console, "Documents", "\n".join(lines))
+
+
 COMMANDS: list[Command] = [
     Command(
         name="/help",
@@ -206,6 +262,26 @@ COMMANDS: list[Command] = [
         behavior="Prints runtime health information. Secrets are never shown.",
         arguments="None.",
         handler=_status,
+    ),
+    Command(
+        name="/ingest",
+        description="Index Markdown, text, and PDF files for retrieval",
+        category=CATEGORY_GENERAL,
+        usage="/ingest [path] [namespace] [--force]",
+        example="/ingest docs handbook",
+        behavior="Chunks, embeds, and indexes supported files. Unchanged files are skipped unless --force is given.",
+        arguments="Path (default: docs), namespace (default: default), and an optional --force flag.",
+        handler=_ingest,
+    ),
+    Command(
+        name="/documents",
+        description="List indexed documents and namespaces",
+        category=CATEGORY_GENERAL,
+        usage="/documents [namespace]",
+        example="/documents handbook",
+        behavior="Prints every indexed document, optionally filtered to one namespace.",
+        arguments="Optional namespace.",
+        handler=_documents,
     ),
     Command(
         name="/version",

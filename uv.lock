@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.14"
 resolution-markers = [
     "sys_platform == 'win32'",
@@ -12,13 +12,17 @@ name = "agentic-chatbot"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "faiss-cpu" },
     { name = "langchain" },
     { name = "langchain-openai" },
+    { name = "langchain-text-splitters" },
     { name = "langgraph" },
     { name = "langgraph-checkpoint-sqlite" },
     { name = "langsmith" },
+    { name = "numpy" },
     { name = "prompt-toolkit" },
     { name = "pydantic-settings" },
+    { name = "pypdf" },
     { name = "python-dotenv" },
     { name = "rich" },
     { name = "streamlit" },
@@ -33,13 +37,17 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "faiss-cpu", specifier = ">=1.16.0" },
     { name = "langchain", specifier = ">=1.4.9" },
     { name = "langchain-openai", specifier = ">=1.7.4" },
+    { name = "langchain-text-splitters", specifier = ">=1.0" },
     { name = "langgraph", specifier = ">=1.2.19" },
     { name = "langgraph-checkpoint-sqlite", specifier = ">=3.1.3" },
     { name = "langsmith", specifier = ">=0.14.17" },
+    { name = "numpy", specifier = ">=2" },
     { name = "prompt-toolkit", specifier = ">=3.0.53" },
     { name = "pydantic-settings", specifier = ">=2.16.2" },
+    { name = "pypdf", specifier = ">=7.1.0" },
     { name = "python-dotenv", specifier = ">=1.2.4" },
     { name = "rich", specifier = ">=15.0.0" },
     { name = "streamlit", specifier = ">=1.67.0" },
@@ -236,6 +244,25 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/fc/f8/98eea607f65de6527f8a2e8885fc8015d3e6f5775df186e443e0964a11c3/distro-1.9.0.tar.gz", hash = "sha256:2fa77c6fd8940f116ee1d6b94a2f90b13b5ea8d019b98bc8bafdcabcdd9bdbed", size = 60722, upload-time = "2023-12-24T09:54:32.31Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/12/b3/231ffd4ab1fc9d679809f356cebee130ac7daa00d6d6f3206dd4fd137e9e/distro-1.9.0-py3-none-any.whl", hash = "sha256:7bffd925d65168f85027d8da9af6bddab658135b840670a223589bc0c8ef02b2", size = 20277, upload-time = "2023-12-24T09:54:30.421Z" },
+]
+
+[[package]]
+name = "faiss-cpu"
+version = "1.16.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "packaging" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/81/97/071a420d03c6624bfba215b5127f7cd6c6c3f08bdeaef575e079b9355643/faiss_cpu-1.16.0-cp310-abi3-macosx_15_0_arm64.whl", hash = "sha256:fe430200c5b91eff67ebb9fe3958963d3ae7dfb341e3af7c1102ecf6ade4378e", size = 5251785, upload-time = "2026-11-10T16:40:52.44Z" },
+    { url = "https://files.pythonhosted.org/packages/76/cd/c3c8bdbeaad9f608ae35bf542ca6b2d4d9edc8295524fc14c3ffa6d68a79/faiss_cpu-1.16.0-cp310-abi3-macosx_15_0_x86_64.whl", hash = "sha256:67f5072c8cdaaa9950affd12b43e21bde5715bc788ec36831d135c4ecae2d035", size = 7946329, upload-time = "2026-11-10T16:40:54.355Z" },
+    { url = "https://files.pythonhosted.org/packages/fc/56/ca6813847b5ce85c6281f252c8c09f0d16fedb5640659643f847570e20fd/faiss_cpu-1.16.0-cp310-abi3-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:f9c355a466dd9fe0b1e7cc39c57d5d57380754e4facb74c62533b2e9b9b8ee82", size = 10847740, upload-time = "2026-11-10T16:40:56.421Z" },
+    { url = "https://files.pythonhosted.org/packages/19/a8/82737cf7c2171287ca38c9e0b07e62607c4ab1cbfaaec5f8919595ca44b5/faiss_cpu-1.16.0-cp310-abi3-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:876abdd551465c9a81c27eda6f42cbe76d17592acb582834e9ec53b763ff5724", size = 19485185, upload-time = "2026-11-10T16:40:58.511Z" },
+    { url = "https://files.pythonhosted.org/packages/80/84/8c47930b4d5b5bb47a99bccb758e739a65913e69dc8046347b45891ef888/faiss_cpu-1.16.0-cp310-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:13a17fa40f26aad4e6e6d38b406210721b541398ce70091165af5b5c32e5c9ab", size = 12454436, upload-time = "2026-11-10T16:41:00.661Z" },
+    { url = "https://files.pythonhosted.org/packages/ea/5e/c9088fc202e7f765ead1d70c6b3e2e4894cf9a198f77be86fa2fbc480bfe/faiss_cpu-1.16.0-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:f4ba44201cbaa6612df1af35979aee6a972e9e75942f607f3cc90343646fb51a", size = 20247117, upload-time = "2026-11-10T16:41:02.535Z" },
+    { url = "https://files.pythonhosted.org/packages/20/25/19399cb635469beba827d1151a6be19a94f13908e3c365163be6623b167d/faiss_cpu-1.16.0-cp314-cp314-win_amd64.whl", hash = "sha256:0adb10b125ceb17dc1e631f2a692ff0534b7db910aabab1b46ce77ec096b9e40", size = 16916582, upload-time = "2026-11-10T16:41:19.004Z" },
+    { url = "https://files.pythonhosted.org/packages/f4/49/35a7267b6cdb3d54ba992d41279ff6ef34eb62f9cfd758767ccc666c7d6e/faiss_cpu-1.16.0-cp314-cp314-win_arm64.whl", hash = "sha256:ced04bdc26ced1e7deb3957fd01442952efbf4414ec380c9ce1424a72e52b7f8", size = 9743927, upload-time = "2026-11-10T16:41:21.065Z" },
 ]
 
 [[package]]
@@ -584,6 +611,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/cb/8b/d908d082c3cf5368ddd1816ed114de79c873f979ba7f98b95fab0e841643/langchain_protocol-0.0.20.tar.gz", hash = "sha256:0f5bd002474265648e91161771a9e0438fe9480bd55a416e51af0f60070637ec", size = 6280, upload-time = "2026-10-20T11:13:50.84Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/02/4b/f1c99a0b27c5ff8b4b131c0d6e62012c17cc424089efe213767db927afd2/langchain_protocol-0.0.20-py3-none-any.whl", hash = "sha256:3c935e5e46b0f6f9cb52f45ba7cfa53d1b9fa80c82c4a277d47f03e07f7385b1", size = 7347, upload-time = "2026-10-20T11:13:49.566Z" },
+]
+
+[[package]]
+name = "langchain-text-splitters"
+version = "1.1.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "langchain-core" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/85/22/d401fffe8d3f1339f6ac880e5d637db73933efa95635304849b2d44ab0fe/langchain_text_splitters-1.1.3.tar.gz", hash = "sha256:929b6c76f99d611a5b1d8f5591ef302909b86a436ceb3217034d24e4757868d8", size = 308295, upload-time = "2026-10-02T15:46:33.173Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c7/51/2880d2e88cce13c1180178f7e8dc796c2f45b2dc09cc09ed407d116c08cc/langchain_text_splitters-1.1.3-py3-none-any.whl", hash = "sha256:50edeb318b3be6a6308dddd7d616ab82823a9ccbea59a9c14c58a7b91df60295", size = 38217, upload-time = "2026-10-02T15:46:32.271Z" },
 ]
 
 [[package]]
@@ -1218,6 +1257,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/49/2e/ced460408999b33da6b31b0021b0f37d329e202d4169aeb164493778f25b/pygments-2.21.0.tar.gz", hash = "sha256:610ca751c9bc2492b38eb9a38a7fbc93edbbb2d7182edaf34e66ae493dee5c8c", size = 5005329, upload-time = "2026-08-17T08:02:48.824Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/71/46/17f022dd3e953bf20a04a028a21ec746d942f8d2af30fa0f124fa0e6a684/pygments-2.21.0-py3-none-any.whl", hash = "sha256:2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9", size = 1250147, upload-time = "2026-08-17T08:02:44.912Z" },
+]
+
+[[package]]
+name = "pypdf"
+version = "7.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/60/d3/367aa9baefaededd3321cde46bbcb9f008bb51cef3a6b745608352a99534/pypdf-7.1.0.tar.gz", hash = "sha256:ca3fa902369e98a6d2cb7b56396de902b72ef9bb3c1e8706c1bfc7d8bd0cf0d7", size = 7215190, upload-time = "2026-11-13T12:23:18.629Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ed/4c/d19f91b743c8579b67e3d8b001e095745dec5bb13a9b4b9eadc235a85d9e/pypdf-7.1.0-py3-none-any.whl", hash = "sha256:47cca6b24bdcf4c4d65b5f7b8b972535c61710a061261e737688777cfd9a7bfb", size = 418698, upload-time = "2026-11-13T12:23:16.777Z" },
 ]
 
 [[package]]

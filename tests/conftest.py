@@ -37,6 +37,7 @@ def isolate_langsmith_env():
 def settings(tmp_path) -> Settings:
     return Settings(
         database_path=str(tmp_path / "chatbot_memory.db"),
+        rag_index_path=str(tmp_path / "faiss"),
         openai_api_key="test-key",
         _env_file=None,
     )

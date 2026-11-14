@@ -1,10 +1,10 @@
 # Architecture
 
 This document describes how the chatbot is structured **right now**: a
-single-process, interactive CLI application built with LangChain, LangGraph, and
-SQLite. FastAPI has been intentionally removed for the moment. The layout below
-exists so that adding an HTTP layer later is a wiring change rather than a
-rewrite.
+single-process, interactive CLI application built with LangChain, LangGraph,
+SQLite, and FAISS. FastAPI has been intentionally removed for the moment. The
+layout below exists so that adding an HTTP layer later is a wiring change rather
+than a rewrite.
 
 > For setup and usage instructions, see `README.md`.
 
@@ -18,6 +18,8 @@ rewrite.
 4. Make the graph definition independent of how it is invoked.
 5. Make a future FastAPI layer a thin adapter over the service layer.
 6. Route tool calls through a standard LangGraph loop backed by one registry.
+7. Support retrieval over local documents (text + PDF) without adding a second
+   database: text lives in SQLite, vectors in one FAISS index per namespace.
 
 The guiding rule: **the CLI and a future API are interchangeable presentations
 of the same services.** No business logic lives in `cli/`, and no HTTP or
@@ -35,6 +37,8 @@ agentic-chatbot/
 ├── uv.lock
 ├── .env / .env.example
 ├── chatbot_memory.db            # SQLite: thread metadata + LangGraph checkpoints
+├── docs/                        # User documents indexed by /ingest
+├── data/faiss/                  # One FAISS index file per namespace
 ├── tests/                       # Pytest suite: fakes, temp SQLite databases
 ├── notebooks/                   # Learning notebooks
 │
@@ -60,9 +64,12 @@ agentic-chatbot/
         │
         ├── config.py            # pydantic-settings Settings (env + .env)
         ├── llm.py               # ChatOpenAI factory
+        ├── embeddings.py        # OpenAIEmbeddings factory
+        ├── loaders.py           # text/Markdown/PDF -> page-aware sections
+        ├── vector_store.py      # one FAISS index per namespace
         ├── database.py          # SQLite connection + schema creation
-        ├── models.py            # Domain dataclasses (Thread, Note, TurnEvent)
-        ├── repository.py        # ThreadRepository + NotesRepository
+        ├── models.py            # Domain dataclasses (Thread, Note, Document, ...)
+        ├── repository.py        # Thread, Notes, Documents repositories
         │
         ├── graph/
         │   ├── __init__.py
@@ -74,6 +81,7 @@ agentic-chatbot/
         │   ├── __init__.py
         │   ├── thread_service.py  # Thread lifecycle (CRUD + checkpoint cleanup)
         │   ├── title_service.py   # Automatic title generation
+        │   ├── document_service.py # Ingestion, chunking, retrieval
         │   └── chat_service.py    # Streaming turns, history, state access
         │
         └── tools/
@@ -82,8 +90,9 @@ agentic-chatbot/
             ├── utilities.py       # local helpers (hash, base64, units, ...)
             ├── life.py            # loan, tip, BMI, age, timezone, fuel
             ├── notes.py           # database-backed note tools
+            ├── documents.py       # search_documents / list_documents
             ├── mocks.py           # simulated API tools (weather, search, ...)
-            └── registry.py        # STATIC_TOOLS / get_tools(repo)
+            └── registry.py        # STATIC_TOOLS / get_tools(repo, documents)
 ```
 
 ---
@@ -109,19 +118,21 @@ agentic-chatbot/
 ┌───────────────────────────▼──────────────────────────────────┐
 │ Service layer (framework-agnostic)                           │
 │   ChatService     ThreadService     TitleService             │
-│   - orchestration   - lifecycle      - prompt + fallback      │
-│   - streaming       - validation     - model call             │
-│   - history                                                  │
+│   DocumentService                                            │
+│   - orchestration   - lifecycle      - prompt + fallback     │
+│   - streaming       - validation     - model call            │
+│   - history         - ingestion      - titles                │
+│                     - retrieval (search + citations)         │
 └───────────────┬───────────────────────────────┬──────────────┘
                 │                               │
 ┌───────────────▼──────────────┐  ┌─────────────▼──────────────┐
-│ Persistence                  │  │ Graph orchestration        │
+│ Persistence & retrieval      │  │ Graph orchestration        │
 │   ThreadRepository           │  │   StateGraph(ChatState)    │
-│   database.py                │  │   START → chat_node        │
-│   SqliteSaver (checkpoints)  │  │        ⇄ tools → END       │
-│   models.py (Thread, Event)  │  │   compiled w/ checkpointer │
-│                              │  │   llm.py (ChatOpenAI)      │
-│                              │  │   tools/registry.py        │
+│   NotesRepository            │  │   START → chat_node        │
+│   DocumentsRepository        │  │        ⇄ tools → END       │
+│   database.py                │  │   compiled w/ checkpointer │
+│   SqliteSaver (checkpoints)  │  │   llm.py (ChatOpenAI)      │
+│   loaders.py / vector_store  │  │   tools/registry.py        │
 └──────────────────────────────┘  └────────────────────────────┘
 
         container.py constructs and connects every box above.
@@ -130,15 +141,19 @@ agentic-chatbot/
 ### Dependency direction
 
 - `cli` → `container` → (`config`, `database`, `repository`, `graph`, `llm`,
-  `services`, `tools`)
+  `embeddings`, `loaders`, `vector_store`, `services`, `tools`)
 - `services.chat` → compiled graph + `ThreadService` + `TitleService`
 - `services.thread` → `ThreadRepository` + `SqliteSaver`
+- `services.document` → `DocumentsRepository` + `VectorIndexStore` +
+  `Embeddings` + `loaders`
 - `graph.workflow` → `graph.nodes` → `graph.state` (+ LangGraph `ToolNode`)
-- `tools.registry` → `tools.builtin`
+- `tools.registry` → `tools.builtin`, `tools.notes`, `tools.documents`
+- `vector_store` → `faiss` + `numpy`; `loaders` → `pypdf`
 - `repository` → `models` + `sqlite3`
 
-Nothing imports the CLI, and `graph/` never imports `services/`. That one-way
-flow is what keeps the business logic reusable.
+Nothing imports the CLI, `graph/` never imports `services/`, and
+`services/document_service.py` knows nothing about the graph, CLI, or HTTP. That
+one-way flow is what keeps the business logic reusable.
 
 Within `cli/`, the imports also point one way:
 `app → {commands, chat, input, session}`, `commands → {registry, console, session}`,
@@ -166,8 +181,24 @@ class ChatbotContainer:
 
         self.llm = create_llm(settings)                              # 5
         self.notes_repository = NotesRepository(self.connection)    # 5a
-        self.tools = get_tools(self.notes_repository)                # 5b
-        self.chat_llm = create_llm(settings, self.tools)             # 5c
+        self.embeddings = create_embeddings(settings)               # 5b
+        self.documents_repository = DocumentsRepository(            # 5c
+            self.connection
+        )
+        self.vector_store = VectorIndexStore(                       # 5d
+            Path(settings.rag_index_path), settings.embedding_dimensions
+        )
+        self.document_service = DocumentService(                    # 5e
+            self.documents_repository, self.vector_store, self.embeddings,
+            chunk_size=settings.rag_chunk_size,
+            chunk_overlap=settings.rag_chunk_overlap,
+            top_k=settings.rag_top_k,
+            min_score=settings.rag_min_score,
+        )
+        self.tools = get_tools(                                     # 5f
+            self.notes_repository, self.document_service
+        )
+        self.chat_llm = create_llm(settings, self.tools)             # 5g
         self.chatbot = build_chatbot(                               # 6
             self.chat_llm, self.checkpointer, self.tools
         )
@@ -181,7 +212,7 @@ class ChatbotContainer:
             self.chatbot,
             self.thread_service,
             self.title_service,
-            settings.system_prompt,
+            settings.system_prompt + RAG_HINT,
         )
 
     def close(self) -> None:
@@ -190,15 +221,21 @@ class ChatbotContainer:
 
 1. Open one SQLite connection (`check_same_thread=False`) with
    `row_factory = sqlite3.Row`.
-2. Create the `threads` and `notes` tables if missing.
+2. Create the `threads`, `notes`, `documents`, `document_chunks`, and
+   `rag_meta` tables if missing.
 3. Wrap the same connection in LangGraph's `SqliteSaver`.
 4. Let the checkpointer create/upgrade its own tables.
 5. Build the untooled chat model from settings (used for title generation).
    5a. Build the notes repository over the shared connection.
-   5b. Load the tool registry, binding note tools to that repository.
-   5c. Build a tool-bound copy of the model (`bind_tools`).
+   5b. Build the OpenAI embeddings model (no network call at construction).
+   5c. Build the documents repository over the shared connection.
+   5d. Open the per-namespace FAISS index directory.
+   5e. Build the document service (ingest, chunk, embed, search).
+   5f. Load the tool registry, binding note and document tools.
+   5g. Build a tool-bound copy of the model (`bind_tools`).
 6. Compile the graph exactly once, passing the bound model and the tools.
-7. Wire the repository and services.
+7. Wire the repository and services. The chat service receives the system
+   prompt plus a short retrieval hint.
 
 `build_container(settings=None)` is the public factory. The CLI uses it today; a
 FastAPI lifespan will use the same function later. Creating the graph once and
@@ -222,6 +259,22 @@ current working directory).
 | `llm_temperature` | `LLM_TEMPERATURE` | `0.0`                             |
 | `system_prompt`   | `SYSTEM_PROMPT`   | `You are a helpful AI assistant.` |
 
+RAG settings:
+
+| Setting                | Env var                | Default                   |
+| ---------------------- | ---------------------- | ------------------------- |
+| `embeddings_model`     | `EMBEDDINGS_MODEL`     | `text-embedding-3-small`  |
+| `embedding_dimensions` | `EMBEDDING_DIMENSIONS` | `1536`                    |
+| `rag_chunk_size`       | `RAG_CHUNK_SIZE`       | `800`                     |
+| `rag_chunk_overlap`    | `RAG_CHUNK_OVERLAP`    | `120`                     |
+| `rag_top_k`            | `RAG_TOP_K`            | `4`                       |
+| `rag_min_score`        | `RAG_MIN_SCORE`        | `0.15`                    |
+| `docs_path`            | `DOCS_PATH`            | `docs`                    |
+| `rag_index_path`       | `RAG_INDEX_PATH`       | `data/faiss`              |
+| `rag_max_text_bytes`   | `RAG_MAX_TEXT_BYTES`   | `2000000`                 |
+| `rag_max_pdf_bytes`    | `RAG_MAX_PDF_BYTES`    | `20000000`                |
+| `rag_max_pdf_pages`    | `RAG_MAX_PDF_PAGES`    | `200`                     |
+
 `get_settings()` returns a new `Settings`. Explicit constructor arguments
 override both the environment and `.env`, which is what tests do.
 
@@ -233,11 +286,48 @@ resolve `OPENAI_API_KEY` from the process environment. When `tools` is provided,
 the model is wrapped with `bind_tools` so it can emit tool calls; without tools
 the raw `ChatOpenAI` is returned (used for title generation).
 
+### `embeddings.py`
+
+`create_embeddings(settings, dimensions=None)` returns an `OpenAIEmbeddings`
+configured with `embeddings_model` and `embedding_dimensions`. Construction makes
+no network call, so the container can build it at startup.
+
+### `loaders.py`
+
+`load_file(path, max_pdf_pages=200)` turns one file into a `LoadResult`:
+
+- `Section(page, text)` — one per PDF page (`page` is 1-based), or one for a
+  text file with `page=None`.
+- `truncated` — `True` when a PDF exceeded `max_pdf_pages`.
+- `DocumentLoadError` — unsupported suffix, unreadable file, encrypted PDF,
+  corrupt PDF, or no extractable text (scanned/image-only PDF; no OCR).
+
+Supported suffixes: `.md`, `.markdown`, `.txt`, `.rst`, `.pdf`. Text is
+normalized (NULs removed, CRLF to LF, blank runs collapsed, stripped).
+
+### `vector_store.py`
+
+`VectorIndexStore(directory, dimensions)` keeps **one FAISS index per
+namespace**:
+
+- `faiss.IndexIDMap2(faiss.IndexFlatIP(dim))` with `document_chunks.row_id` as
+  the int64 vector id; vectors are L2-normalized, so scores are cosine
+  similarity.
+- Indexes load lazily from `{directory}/{slug}-{sha1}.faiss` and are written
+  atomically (`write_index` to a temp file, then `os.replace`).
+- `add`, `replace` (remove + add + one save), `remove`, `search(namespaces,
+  vector, k)`, `stats`.
+- A removed-to-empty namespace deletes its index file. Loading an index whose
+  dimension differs from the configured one raises with remediation.
+- Cross-namespace search is a merge of the per-index results.
+
 ### `database.py`
 
 - `create_connection(path)` — opens SQLite with `check_same_thread=False` and
   `sqlite3.Row` rows.
-- `init_schema(connection)` — creates the `threads` and `notes` tables.
+- `init_schema(connection, embedding_dimensions=1536)` — creates the `threads`,
+  `notes`, `documents`, `document_chunks`, and `rag_meta` tables, and records or
+  validates the embedding dimension.
 - `THREADS_TABLE_SCHEMA`, `NOTES_TABLE_SCHEMA` — the DDL in one place each.
 
 ### `models.py`
@@ -247,6 +337,13 @@ the raw `ChatOpenAI` is returned (used for title generation).
   response schemas).
 - `Note` — frozen dataclass: `note_id`, `thread_id`, `title`, `content`,
   `created_at`. Used by `NotesRepository` and the note tools.
+- `Chunk` — frozen dataclass: `content`, `page` (optional PDF page). The
+  repository/service boundary for one text chunk.
+- `Document` — frozen dataclass: `doc_id`, `namespace`, `source`, `title`,
+  `content_hash`, `size_bytes`, timestamps.
+- `DocumentHit` — frozen dataclass returned by retrieval: chunk/document
+  identity, `namespace`, `title`, `source`, `chunk_index`, `page`, `content`,
+  and `score` (cosine similarity, higher is better).
 - `TurnEvent` — frozen dataclass emitted by `ChatService.stream_turn`:
   - `type="token"`, `content="..."` for each streamed chunk
   - `type="tool_call"`, `name=...`, `content=<JSON args>` when the model requests
@@ -289,6 +386,20 @@ search, and delete therefore cannot cross conversation boundaries. Notes are
 durable: they live in `notes` table rows, independent of LangGraph checkpoints,
 so they survive process restarts.
 
+`DocumentsRepository` owns **all SQL against `documents` and
+`document_chunks`** (never vectors):
+
+| Method | Behaviour |
+| --- | --- |
+| `get(doc_id)` | one `Document` |
+| `find_by_source(namespace, source)` | dedupe lookup |
+| `list_documents(namespace=None)` / `list_namespaces()` | listing |
+| `replace_document(..., chunks)` | one transaction: upsert `documents`, delete old chunks, insert new chunks (with `page`); returns the document and the new chunk `row_id`s |
+| `chunk_ids(doc_id)` | vector ids for a document (read before a replace) |
+| `chunks_by_ids(ids)` | joined chunk + document rows keyed by `row_id` |
+| `delete_document(doc_id)` | delete chunks, then the document |
+| `stats()` | document/chunk/namespace counts |
+
 ### `services/thread_service.py`
 
 Coordinates thread lifecycle and enforces small rules:
@@ -309,6 +420,26 @@ removing both message state and its metadata.
 100 chars. The prompt is a module constant. On any failure (or empty output) it
 falls back to the first 50 characters of the user message, then `"New chat"`.
 Exceptions never escape.
+
+### `services/document_service.py`
+
+Ingestion and retrieval, independent of the CLI:
+
+- `ingest_path(path, namespace=None, force=False)` → `IngestResult`
+  (`files_seen`, `files_indexed`, `files_skipped`, `chunks_created`,
+  `namespaces`, `errors`, `warnings`). A file or directory; missing paths and
+  unreadable files are reported, never raised.
+- `ingest_file(path, namespace, force=False)` → `(chunks, skipped, warning)`.
+  Loads sections, hashes the text, skips unchanged `(namespace, source)` unless
+  `force`, chunks each section independently (preserving `page`), embeds in
+  batches of 64, then writes SQL and the index.
+- **Consistency order:** embed → `replace_document` (SQL transaction) →
+  `vector_store.replace`. If the index write fails, the SQL rows are deleted so
+  no orphan chunk can outlive a failed index update.
+- `search(query, namespace=None, k=None)` → `DocumentHit`s ordered by score;
+  blank query returns `[]`, `k` is clamped to 1–10, and hits below
+  `rag_min_score` are filtered so "nothing relevant" is representable.
+- `list_documents`, `list_namespaces`, `delete_document`, `stats`.
 
 ### `services/chat_service.py`
 
@@ -379,6 +510,13 @@ return clear `"Error: ..."` strings instead of raising, so the model can recover
   `config["configurable"]["thread_id"]` to scope every repository call. Notes
   therefore persist across turns and restarts while staying private to the thread
   that created them.
+- `documents.py` — retrieval tools via `create_document_tools(service)`:
+  - `search_documents(query, namespace="", k=4)` — cosine search over the
+    ingested knowledge base; returns JSON hits with `title`, `source`,
+    `namespace`, `chunk_index`, `page`, `score`, and `content`. Blank queries and
+    no-hit results are plain strings, never exceptions.
+  - `list_documents(namespace="")` — known namespaces plus document metadata.
+    Namespaces are chosen at ingest time, so the model can discover them here.
 - `mocks.py` — simulated implementations of common API-backed tools:
   `web_search`, `fetch_url`, `get_news`, `get_weather`, `get_stock_price`,
   `convert_currency`, `send_email`, `send_slack_message`,
@@ -388,8 +526,10 @@ return clear `"Error: ..."` strings instead of raising, so the model can recover
   Replace a tool body with a real client call when its credentials are
   available — signatures and return shapes can stay the same.
 - `registry.py` — `STATIC_TOOLS` (32 repository-free tools) plus
-  `get_tools(notes_repository)`, which appends the four note tools for a total of
-  36. `container.py` passes the result to both `create_llm` and `build_chatbot`.
+  `get_tools(notes_repository, document_service=None)`, which appends the four
+  note tools and, when a document service is supplied, the two retrieval tools
+  for a total of 38. `container.py` passes the result to both `create_llm` and
+  `build_chatbot`.
 
 **Adding a tool** is additive:
 
@@ -407,9 +547,10 @@ Append the function to `STATIC_TOOLS` in `registry.py`. Nothing else changes:
 returning a plain string or JSON string; return `"Error: ..."` for bad input so
 the model can correct itself instead of the run failing.
 
-Tools that need shared state (like notes) are built by a `create_*_tools()`
-factory that closes over a repository, and `get_tools(repository)` includes them.
-This keeps tools dependent only on their repository rather than on global state.
+Tools that need shared state (notes, documents) are built by a
+`create_*_tools()` factory that closes over its dependency, and
+`get_tools(notes_repository, document_service)` includes them. This keeps tools
+dependent only on their repository/service rather than on global state.
 
 Mock tools are intentionally honest: JSON responses include `"mock": true`, no
 network calls are made, and the modeled state (calendar) lives in module memory
@@ -549,6 +690,7 @@ chat_node (tool-bound LLM)
              ├─ calculator, get_current_time        (local)
              ├─ utilities / life                    (local)
              ├─ notes                               (SQLite, per thread)
+             ├─ search_documents / list_documents   (FAISS per namespace)
              └─ mocks                               (simulated data)
              │
              ▼
@@ -562,6 +704,40 @@ Stream:  messages mode  → chat_node answer tokens
 ```
 
 LangGraph's default `recursion_limit` (25) caps the number of round trips.
+
+### Ingesting documents (RAG)
+
+```text
+/ingest <path> <namespace> [--force]
+      │
+      ▼
+cli.commands._ingest → DocumentService.ingest_path()
+      │
+      ├─ walk path (rglob), skip hidden/unsupported/oversized files
+      │
+      ▼ per file
+loaders.load_file()                 (text -> one Section, PDF -> one per page)
+      │
+      ├─ sha256(section text) == stored hash and not --force ? → skipped
+      ▼
+RecursiveCharacterTextSplitter      (each section chunked independently,
+      │                              Chunk.page preserved for PDFs)
+      ▼
+OpenAIEmbeddings.embed_documents    (batches of 64)
+      │
+      ├─ DocumentsRepository.replace_document()   (SQL transaction:
+      │      upsert documents, replace document_chunks; returns row_ids)
+      ▼
+VectorIndexStore.replace()          (one FAISS index per namespace:
+      │                              remove old ids, add new ids, atomic save)
+      └─ failure → delete the SQL document (compensation) and report the file
+
+/search_documents(query, namespace, k)
+      ▼
+OpenAIEmbeddings.embed_query → VectorIndexStore.search(namespaces, vector, k)
+      ▼
+DocumentsRepository.chunks_by_ids → filter score >= rag_min_score → DocumentHits
+```
 
 ### Creating / switching / deleting threads
 
@@ -583,7 +759,7 @@ LangGraph's default `recursion_limit` (25) caps the number of round trips.
 
 ## 7. Persistence model
 
-One SQLite database (`DATABASE_PATH`) holds three independent concerns:
+One SQLite database (`DATABASE_PATH`) holds four independent concerns:
 
 ### 7.1 Thread metadata — owned by this project
 
@@ -618,7 +794,51 @@ are removed only by `delete_note` from their own thread.
 `notes` table lacks `thread_id`, `ALTER TABLE` adds it with a `''` default. Those
 legacy rows are intentionally invisible to every conversation.
 
-### 7.3 Conversation state — owned by LangGraph
+### 7.3 Knowledge base — owned by this project, vectors in FAISS
+
+```sql
+CREATE TABLE IF NOT EXISTS documents (
+    doc_id       TEXT PRIMARY KEY,
+    namespace    TEXT NOT NULL,
+    source       TEXT NOT NULL,
+    title        TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    size_bytes   INTEGER NOT NULL DEFAULT 0,
+    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (namespace, source)
+);
+
+CREATE TABLE IF NOT EXISTS document_chunks (
+    row_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    chunk_id    TEXT NOT NULL UNIQUE,
+    doc_id      TEXT NOT NULL,
+    namespace   TEXT NOT NULL,
+    chunk_index INTEGER NOT NULL,
+    page        INTEGER,
+    content     TEXT NOT NULL,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS rag_meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+```
+
+SQLite is authoritative for document text and metadata; it stores **no
+vectors**. `document_chunks.row_id` is the id stored in FAISS, so one index
+entry maps to exactly one SQL row, and `page` is `NULL` for text files.
+
+Vectors live in `RAG_INDEX_PATH` (`data/faiss/` by default), one
+`{slug}-{sha1}.faiss` file per namespace. `rag_meta` records the embedding
+dimension and index format version; changing `EMBEDDING_DIMENSIONS` (or the
+model) after ingestion raises with remediation instead of mixing vector sizes.
+Deleting documents removes the matching ids from their namespace index, and an
+index that becomes empty deletes its file. Re-ingesting unchanged files is
+skipped by content hash; `/ingest ... --force` re-embeds to rebuild an index.
+
+### 7.4 Conversation state — owned by LangGraph
 
 `SqliteSaver.setup()` creates and manages its own checkpoint tables
 (`checkpoints`, checkpoint blobs/writes and migrations; exact names are
@@ -630,11 +850,13 @@ The split is deliberate:
 
 - Metadata is cheap to query and render in a thread list.
 - Notes are small durable records, independent of any conversation.
+- Document text and metadata are queryable; vectors live in a purpose-built
+  index that does not bloat SQLite.
 - Message history is managed by the checkpointer so LangGraph can replay and
   resume graph state.
 
-Because all three share one connection, `delete_thread` removes checkpoints and
-metadata together while leaving notes intact.
+Because all four share one connection, `delete_thread` removes checkpoints and
+metadata together while leaving notes and documents intact.
 
 ---
 
@@ -790,6 +1012,16 @@ where that change belongs.
 - **Different database** — change `database.py` and `repository.py`; services and
   CLI stay the same.
 - **Different model/provider** — change `llm.py` only.
+- **Different embeddings/provider** — change `embeddings.py` only; keep
+  `EMBEDDING_DIMENSIONS` in sync or re-ingest after the change.
+- **New document type** — add the suffix to `loaders.SUPPORTED_SUFFIXES` and a
+  branch in `loaders.load_file` that returns `Section`s. Ingestion, chunking,
+  indexing, retrieval, and the tools need no changes.
+- **Different vector store** — reimplement `VectorIndexStore`'s small API
+  (`add`, `replace`, `remove`, `search`, `stats`); `DocumentService` and the
+  tools stay the same.
+- **Different retrieval policy** — change `DocumentService.search` (top-k,
+  minimum score, filtering); the tool surface is already fixed.
 - **New presentation** — add a FastAPI (or any other) module that calls the same
   services; never duplicate SQL or graph logic there.
 - **More conversation metadata** — extend the `threads` schema and `Thread`
@@ -821,7 +1053,7 @@ where that change belongs.
 9. **Mock calendar state is in-memory** — events created by
    `create_calendar_event` reset when the process exits. Notes are the exception:
    they are persisted in SQLite and survive restarts.
-10. **Every tool schema is sent to the model on every call** — 36 tools increase
+10. **Every tool schema is sent to the model on every call** — 38 tools increase
     prompt size and can slow tool selection. Trim `STATIC_TOOLS` (or gate tools
     by config) if latency or cost matters.
 11. **prompt_toolkit needs a terminal** — with piped input, CI, or a shell without
@@ -838,6 +1070,16 @@ where that change belongs.
     first newline or 80 characters to classify the message. Plain prose starts
     streaming as soon as that threshold is crossed; Markdown responses appear at
     the end of the message rather than token by token.
+14. **PDF extraction is `pypdf` without OCR** — scanned or image-only PDFs have
+    no text layer and are reported as per-file ingest errors. Multi-column
+    layouts and tables may extract imperfectly; chunks carry page numbers so
+    answers can be checked against the source. Re-run `/ingest ... --force` after
+    editing a file.
+15. **FAISS indexes live outside SQLite** — `data/faiss/` is a second storage
+    location. Back it up with the database, or rebuild it with
+    `/ingest docs <namespace> --force`. Index files are written atomically and
+    guarded by a thread lock, but two processes must not write the same
+    namespace index.
 
 ---
 
@@ -854,6 +1096,18 @@ uv run python -m agentic_chatbot
 
 # Byte-compile the package
 uv run python -m compileall -q src/agentic_chatbot
+
+# RAG dependency sanity
+uv run python -c "import faiss, pypdf; print(faiss.__version__, pypdf.__version__)"
+```
+
+Ingest and query from the CLI (after putting files in `docs/`):
+
+```text
+/ingest docs handbook
+/documents
+What does the handbook say about onboarding?
+/ingest docs handbook --force     # rebuild after deleting data/faiss/
 ```
 
 Run the suite with:
@@ -862,15 +1116,27 @@ Run the suite with:
 uv run pytest
 ```
 
-Tests use `tmp_path` SQLite databases plus fake graph, LLM, title, thread, and
-checkpointer doubles (`tests/fakes.py`), so no OpenAI calls are made and the real
-`chatbot_memory.db` is never opened. Coverage includes configuration precedence,
+Tests use `tmp_path` SQLite databases plus fake graph, LLM, title, thread,
+checkpointer, and embeddings doubles (`tests/fakes.py`), so no OpenAI calls are
+made and the real `chatbot_memory.db` is never opened. FAISS runs against the
+fake embeddings, fully offline. Coverage includes configuration precedence,
 container wiring and schema creation, thread service CRUD and ordering, checkpoint
 cleanup on delete, `ChatService` streaming/title behavior and tool-event emission,
 the real `ToolNode` loop, every tool implementation (core, utilities, life, notes,
-mocks), notes persistence across separate SQLite connections, thread isolation of
-notes, schema migration for legacy note tables, CLI rendering, the interactive
-command loop, and package entry points.
+documents, mocks), notes persistence across separate SQLite connections, thread
+isolation of notes, schema migration for legacy note tables, document ingestion
+(text and PDF), per-namespace FAISS isolation and persistence, dedupe, retrieval
+scoring, CLI rendering, the interactive command loop, and package entry points.
+
+RAG-specific tests:
+
+| File                             | Scope |
+| -------------------------------- | ----- |
+| `test_loaders.py`                | text normalization, PDF pages/encryption/scanned/truncation, real pypdf parse |
+| `test_vector_store.py`           | per-namespace index files, isolation, merge ordering, replace/remove, persistence, dimension guard |
+| `test_documents_repository.py`   | document/chunk SQL, page round-trip, delete, namespace listing, idempotent schema |
+| `test_document_service.py`       | ingest, dedupe, `force`, page provenance, limits, compensation on index failure |
+| `test_document_tools.py`         | `search_documents` / `list_documents` JSON shapes and error strings |
 
 Presentation-specific tests:
 
@@ -897,10 +1163,15 @@ Manual checks in the CLI:
 /th<tab>            → /threads
 /delete <tab>       → real thread IDs with titles
 /threds             → "Did you mean? /threads"
+/ingest docs handbook
+/documents
+What does the handbook say about onboarding?
+/ingest docs policies --force
 What's the weather in Dhaka?
 Convert 100 USD to EUR.
 Save a note titled "groceries" with milk and eggs.
 ```
 
 Expect a tool status line before the answer, Markdown structure preserved for
-structured responses, and mock results marked with `"mock": true`.
+structured responses, mock results marked with `"mock": true`, and RAG answers
+citing the document title/source (plus page for PDFs).

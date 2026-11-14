@@ -1,5 +1,7 @@
 """Test doubles for the graph, services, and checkpointer."""
 
+import hashlib
+import math
 from types import SimpleNamespace
 
 
@@ -86,3 +88,29 @@ class FakeCheckpointer:
 
     def delete_thread(self, thread_id):
         self.deleted.append(thread_id)
+
+
+class FakeEmbeddings:
+    """Deterministic embeddings double: same text always yields one vector."""
+
+    def __init__(self, dimensions=8):
+        self.dimensions = dimensions
+        self.embed_documents_calls = 0
+        self.embed_query_calls = 0
+
+    def embed_documents(self, texts):
+        self.embed_documents_calls += 1
+        return [self._vector(text) for text in texts]
+
+    def embed_query(self, text):
+        self.embed_query_calls += 1
+        return self._vector(text)
+
+    def _vector(self, text):
+        digest = hashlib.sha256(text.encode("utf-8")).digest()
+        values = [
+            (digest[index % len(digest)] / 255.0) * 2 - 1
+            for index in range(self.dimensions)
+        ]
+        norm = math.sqrt(sum(value * value for value in values)) or 1.0
+        return [value / norm for value in values]

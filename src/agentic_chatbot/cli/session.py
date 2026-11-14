@@ -52,6 +52,10 @@ class ChatSession:
         return self.container.chat_service
 
     @property
+    def document_service(self):
+        return self.container.document_service
+
+    @property
     def settings(self):
         return self.container.settings
 

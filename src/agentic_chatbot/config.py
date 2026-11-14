@@ -17,7 +17,20 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     llm_temperature: float = 0.0
     system_prompt: str = "You are a helpful AI assistant."
-    
+
+    # Retrieval-augmented generation
+    embeddings_model: str = "text-embedding-3-small"
+    embedding_dimensions: int = 1536
+    rag_chunk_size: int = 800
+    rag_chunk_overlap: int = 120
+    rag_top_k: int = 4
+    rag_min_score: float = 0.15
+    docs_path: str = "docs"
+    rag_index_path: str = "data/faiss"
+    rag_max_text_bytes: int = 2_000_000
+    rag_max_pdf_bytes: int = 20_000_000
+    rag_max_pdf_pages: int = 200
+
     # LangSmith Observability
     langsmith_tracing: bool = False
     langsmith_api_key: str | None = None

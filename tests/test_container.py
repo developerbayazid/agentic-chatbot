@@ -3,10 +3,12 @@ import sqlite3
 import pytest
 
 from agentic_chatbot.container import ChatbotContainer
-from agentic_chatbot.repository import NotesRepository
+from agentic_chatbot.repository import DocumentsRepository, NotesRepository
 from agentic_chatbot.services.chat_service import ChatService
+from agentic_chatbot.services.document_service import DocumentService
 from agentic_chatbot.services.thread_service import ThreadService
 from agentic_chatbot.services.title_service import TitleService
+from agentic_chatbot.vector_store import VectorIndexStore
 
 
 def _table_names(connection):
@@ -21,6 +23,9 @@ def test_container_creates_schema_and_services(container):
 
     assert "threads" in names
     assert "notes" in names
+    assert "documents" in names
+    assert "document_chunks" in names
+    assert "rag_meta" in names
     assert any(name.startswith("checkpoint") for name in names)
     note_columns = {
         row[1]
@@ -31,14 +36,20 @@ def test_container_creates_schema_and_services(container):
     assert isinstance(container.title_service, TitleService)
     assert isinstance(container.chat_service, ChatService)
     assert isinstance(container.notes_repository, NotesRepository)
+    assert isinstance(container.documents_repository, DocumentsRepository)
+    assert isinstance(container.vector_store, VectorIndexStore)
+    assert isinstance(container.document_service, DocumentService)
+    assert container.vector_store.path_for("default").parent.is_dir()
     tool_names = {tool.name for tool in container.tools}
-    assert len(tool_names) == 36
+    assert len(tool_names) == 38
     assert {
         "calculator",
         "get_current_time",
         "web_search",
         "calculate_loan_payment",
         "save_note",
+        "search_documents",
+        "list_documents",
     } <= tool_names
     assert container.chat_llm is not container.llm
 

@@ -393,8 +393,8 @@ Each frame is `event: <name>` then `data: <json>`, separated by a blank line.
 | --- | --- | --- |
 | `thread` | `{"thread_id": "..."}` | always first |
 | `status` | `{"status": "processing"}` | always second |
-| `tool_start` | `{"tool": "search_documents", "arguments": {...}}` | model requests a tool |
-| `tool_end` | `{"tool": "search_documents", "result": "..."}` | tool returns |
+| `tool_start` | `{"tool": "search_documents", "arguments": {...}, "tool_call_id": "call_abc"}` | model requests a tool |
+| `tool_end` | `{"tool": "search_documents", "result": "...", "tool_call_id": "call_abc"}` | tool returns |
 | `token` | `{"content": "Hello"}` | incremental assistant text |
 | `approval_required` | see §8.2 | graph paused for a human |
 | `final` | `{"title": "..."}` | turn finished |

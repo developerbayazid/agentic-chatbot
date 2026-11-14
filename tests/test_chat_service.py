@@ -192,11 +192,18 @@ def test_tool_call_and_result_events_are_emitted():
             type="tool_call",
             name="calculator",
             content='{"expression": "2+2"}',
+            call_id="call-1",
         )
         in events
     )
     assert (
-        TurnEvent(type="tool_result", name="calculator", content="4") in events
+        TurnEvent(
+            type="tool_result",
+            name="calculator",
+            content="4",
+            call_id="call-1",
+        )
+        in events
     )
     assert [event.content for event in events if event.type == "token"] == [
         "The answer is 4."

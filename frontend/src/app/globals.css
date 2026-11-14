@@ -1,0 +1,158 @@
+@import "tailwindcss";
+
+/*
+ * BAYAZID AI design tokens — Claude-inspired, white-first.
+ *
+ * Every colour a component uses is declared here as a semantic role; no
+ * component hardcodes a palette value. Light is the primary experience. A dark
+ * palette exists for the optional preference, but the layout, spacing, and
+ * typography are designed against the light values.
+ */
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root,
+.light {
+  --background: #ffffff;
+  --sidebar: #f7f6f3;
+  --surface: #faf9f7;
+  --surface-raised: #ffffff;
+  --surface-hover: #eeece7;
+  --border: #e8e6e1;
+  --border-strong: #d8d5cd;
+  --foreground: #1f1e1d;
+  --muted: #6b6a67;
+  --muted-strong: #4a4845;
+  --accent: #c96442;
+  --accent-hover: #b0563a;
+  --accent-contrast: #ffffff;
+  --accent-soft: #fbeee8;
+  --success: #3f7d58;
+  --success-soft: #edf4ef;
+  --warning: #b07d3a;
+  --warning-soft: #fbf3e7;
+  --danger: #b4453a;
+  --danger-soft: #fbeeec;
+  --user-bubble: #f4f2ee;
+  --code-surface: #f7f6f3;
+  --ring: #c96442;
+}
+
+.dark {
+  --background: #141413;
+  --sidebar: #1b1a18;
+  --surface: #1b1a18;
+  --surface-raised: #201f1d;
+  --surface-hover: #2a2826;
+  --border: #302e2b;
+  --border-strong: #423f3b;
+  --foreground: #f0eee9;
+  --muted: #a5a29b;
+  --muted-strong: #c9c5bd;
+  --accent: #d97757;
+  --accent-hover: #e08a6e;
+  --accent-contrast: #1b1a18;
+  --accent-soft: #2e2420;
+  --success: #7fb894;
+  --success-soft: #1d2a21;
+  --warning: #d9a86a;
+  --warning-soft: #2c2418;
+  --danger: #e08c81;
+  --danger-soft: #2d1f1d;
+  --user-bubble: #262422;
+  --code-surface: #1b1a18;
+  --ring: #d97757;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-sidebar: var(--sidebar);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-hover: var(--surface-hover);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-strong: var(--muted-strong);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-contrast: var(--accent-contrast);
+  --color-accent-soft: var(--accent-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-user-bubble: var(--user-bubble);
+  --color-code-surface: var(--code-surface);
+  --color-ring: var(--ring);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+
+  --radius-card: 0.875rem;
+  --radius-composer: 1.25rem;
+
+  --animate-spin-slow: spin 1.1s linear infinite;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 0.9375rem;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Restrained headings: hierarchy from weight and spacing, not size alone. */
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.011em;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  ::selection {
+    background-color: var(--accent-soft);
+    color: var(--foreground);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

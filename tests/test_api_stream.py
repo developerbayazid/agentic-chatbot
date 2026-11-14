@@ -119,6 +119,50 @@ def test_tool_events_are_mapped(api_client, auth_headers, streamed):
     assert by_name["tool_end"]["result"] == '{"count": 2}'
 
 
+def test_tool_events_carry_a_correlation_id():
+    """Two parallel calls to the SAME tool must be pair-able.
+
+    LangGraph runs tool calls concurrently, so the tool name alone cannot match a
+    start with its end. `tool_call_id` is what makes the timer honest.
+    """
+    parser_events = [
+        TurnEvent(
+            type="tool_call",
+            name="search_documents",
+            content='{"query": "a"}',
+            call_id="call_1",
+        ),
+        TurnEvent(
+            type="tool_call",
+            name="search_documents",
+            content='{"query": "b"}',
+            call_id="call_2",
+        ),
+        TurnEvent(
+            type="tool_result",
+            name="search_documents",
+            content="result b",
+            call_id="call_2",
+        ),
+        TurnEvent(
+            type="tool_result",
+            name="search_documents",
+            content="result a",
+            call_id="call_1",
+        ),
+    ]
+
+    rendered = [to_frame(event, "t1") for event in parser_events]
+
+    assert '"tool_call_id": "call_1"' in rendered[0]
+    assert '"tool_call_id": "call_2"' in rendered[1]
+    # Results arrive out of order and still pair correctly by id.
+    assert '"result": "result b"' in rendered[2]
+    assert '"tool_call_id": "call_2"' in rendered[2]
+    assert '"result": "result a"' in rendered[3]
+    assert '"tool_call_id": "call_1"' in rendered[3]
+
+
 def test_an_interrupt_streams_an_approval_requirement(
     api_client, auth_headers, streamed
 ):

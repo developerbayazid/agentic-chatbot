@@ -79,6 +79,8 @@ data/*.db-*
 data/*.sqlite
 data/*.sqlite3
 data/faiss/
+# Runtime artifacts: uploaded documents and their scratch files.
+data/uploads/
 
 
 .commandcode

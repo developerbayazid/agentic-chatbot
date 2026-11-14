@@ -65,10 +65,24 @@ def to_frame(
         except (TypeError, ValueError):
             pass
 
-        return frame(name, {"tool": event.name, "arguments": arguments})
+        return frame(
+            name,
+            {
+                "tool": event.name,
+                "arguments": arguments,
+                "tool_call_id": event.call_id,
+            },
+        )
 
     if event.type == "tool_result":
-        return frame(name, {"tool": event.name, "result": event.content})
+        return frame(
+            name,
+            {
+                "tool": event.name,
+                "result": event.content,
+                "tool_call_id": event.call_id,
+            },
+        )
 
     if event.type == "interrupt":
         payload = sanitise(event.payload)

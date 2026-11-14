@@ -65,3 +65,6 @@ class TurnEvent:
     title: str | None = None
     name: str | None = None
     payload: dict | None = None
+    # Correlates a ``tool_call`` with its ``tool_result``. LangGraph runs tool
+    # calls concurrently, so the name alone cannot pair them.
+    call_id: str | None = None

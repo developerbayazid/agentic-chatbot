@@ -169,10 +169,12 @@ class ChatService:
                                 type="tool_call",
                                 name=call["name"],
                                 content=json.dumps(call.get("args", {})),
+                                call_id=call.get("id"),
                             )
                     elif node in {"tools", "approval"}:
                         yield TurnEvent(
                             type="tool_result",
                             name=getattr(message, "name", None),
                             content=str(message.content),
+                            call_id=getattr(message, "tool_call_id", None),
                         )

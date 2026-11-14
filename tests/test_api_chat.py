@@ -211,6 +211,40 @@ def test_an_empty_message_is_rejected(api_client, auth_headers, scripted, messag
     assert response.status_code in (422,)
 
 
+@pytest.mark.parametrize("thread_id", ["", "   ", None])
+def test_a_blank_thread_id_starts_a_new_conversation(
+    api_client, auth_headers, scripted, thread_id
+):
+    """An empty form field means "no thread yet", not a malformed request."""
+    install, container = scripted
+    install()
+
+    response = api_client.post(
+        "/api/v1/chat",
+        headers=auth_headers(),
+        json={"message": "Hello", "thread_id": thread_id},
+    )
+
+    assert response.status_code == 200, response.text
+    created = container.thread_service.get_thread(response.json()["thread_id"])
+    assert created is not None
+    assert created.owner_id == "alice"
+
+
+def test_an_unknown_thread_id_is_still_rejected(api_client, auth_headers, scripted):
+    install, _ = scripted
+    install()
+
+    response = api_client.post(
+        "/api/v1/chat",
+        headers=auth_headers(),
+        json={"message": "Hello", "thread_id": "string"},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "THREAD_NOT_FOUND"
+
+
 def test_a_client_cannot_supply_an_owner(api_client, auth_headers, scripted):
     install, _ = scripted
     install()

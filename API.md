@@ -245,11 +245,22 @@ Send one message and wait for the whole answer.
 | Field | Type | Rules |
 | --- | --- | --- |
 | `message` | string | 1–32 000 chars, not blank |
-| `thread_id` | string \| null | 1–128 chars; omit for a new conversation |
+| `thread_id` | string \| null | omit, `null`, `""`, or whitespace to **start a new conversation**; otherwise an existing ID you own |
 
 ```json
 { "message": "Summarise the handbook", "thread_id": null }
 ```
+
+Create a new conversation by sending **no usable `thread_id`** — omit the field,
+send `null`, or send an empty string from a form. The response returns the new
+`thread_id`; send that back to continue the same conversation. Any non-blank
+value is treated as an existing ID you must own:
+
+| `thread_id` sent | Result |
+| --- | --- |
+| omitted, `null`, `""`, `"   "` | new conversation, `200` |
+| a real ID you own | continues it, `200` |
+| an unknown / someone else's ID | `404 THREAD_NOT_FOUND` |
 
 **200 — completed**
 
@@ -804,7 +815,7 @@ and that no response ever contains an `approval_token`.
 | `401` only on one endpoint, with a trailing slash | `307` redirect dropped `Authorization` | call the exact path (`/api/v1/chat`) |
 | `422 Invalid request: ` (empty field list) | called `POST /chat` with **no** body | send `-H 'content-type: application/json' -d '{...}'` |
 | `422 Invalid request: message, nope` | unknown field (e.g. `owner_id`) | remove it; identity comes from the token |
-| `404 THREAD_NOT_FOUND` for a literal ID | placeholder like `"string"` | omit `thread_id` to create a new conversation |
+| `404 THREAD_NOT_FOUND` | unknown thread, or another user's | omit `thread_id` (or send `""`) to start a new conversation |
 | `409 APPROVAL_PENDING` | an earlier turn is waiting for a decision | `GET /approvals`, then decide |
 | `/health/ready` is `503` | missing `API_KEYS` / weak `JWT_SECRET_KEY` | set them in `.env` |
 | `uv run fastapi dev` finds no app | the CLI looks in the **current** directory | run it from the repo root (root `main.py`), or use `--entrypoint main:app` |

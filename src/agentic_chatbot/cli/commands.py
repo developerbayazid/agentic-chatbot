@@ -130,6 +130,31 @@ def _history(session: ChatSession, argument: str) -> None:
     )
 
 
+def _approvals(session: ChatSession, argument: str) -> None:
+    live = None
+
+    try:
+        live = session.chat_service.get_pending_interrupt(session.current_thread_id)
+    except Exception:  # noqa: BLE001 - the command is read-only and must not crash
+        live = None
+
+    seeded = None
+    operator = ""
+    service = session.inventory_service
+
+    if service is not None:
+        seeded = service.get_pending_approvals()
+        operator = service.describe_employee(session.settings.inventory_operator_id)
+
+    ui.show_approvals(
+        session.console,
+        session.current_thread_id,
+        live=live,
+        seeded=seeded,
+        operator=operator,
+    )
+
+
 def _rename(session: ChatSession, argument: str) -> None:
     title = (argument or session.ask("New conversation title: ")).strip()
 
@@ -332,6 +357,20 @@ COMMANDS: list[Command] = [
         behavior="Renders the messages stored for the active thread.",
         arguments="None.",
         handler=_history,
+    ),
+    Command(
+        name="/approvals",
+        description="Show approvals waiting for this conversation",
+        category=CATEGORY_CONVERSATION,
+        usage="/approvals",
+        example="/approvals",
+        behavior=(
+            "Read-only: shows a live graph interrupt for the active thread plus "
+            "the seeded business approvals in the inventory dataset. Decisions "
+            "are made in the approval panel."
+        ),
+        arguments="None.",
+        handler=_approvals,
     ),
     Command(
         name="/rename",

@@ -40,6 +40,7 @@ class ChatSession:
     console: Console
     current_thread_id: str
     ask: AskFn = field(default=_unavailable_ask)
+    approval_ask: AskFn | None = None
     pick: PickFn = field(default=_fallback_pick)
     running: bool = True
 
@@ -56,13 +57,23 @@ class ChatSession:
         return self.container.document_service
 
     @property
+    def inventory_service(self):
+        return self.container.inventory_service
+
+    @property
     def settings(self):
         return self.container.settings
 
     def process(self, message: str) -> None:
         from agentic_chatbot.cli.chat import process_message
 
-        process_message(self.console, self.chat_service, self.current_thread_id, message)
+        process_message(
+            self.console,
+            self.chat_service,
+            self.current_thread_id,
+            message,
+            ask=self.approval_ask or self.ask,
+        )
 
     def stop(self) -> None:
         self.running = False

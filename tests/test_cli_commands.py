@@ -53,6 +53,7 @@ def test_documented_commands_are_registered():
         "/new",
         "/threads",
         "/history",
+        "/approvals",
         "/rename",
         "/delete",
     }
@@ -60,6 +61,65 @@ def test_documented_commands_are_registered():
 
 def names_of_commands():
     return [command.name for command in COMMANDS]
+
+
+def test_approvals_command_is_read_only_and_reports_nothing_pending(
+    session, console, monkeypatch
+):
+    monkeypatch.setattr(
+        session.chat_service, "get_pending_interrupt", lambda thread_id: None
+    )
+    monkeypatch.setattr(
+        session.inventory_service,
+        "get_pending_approvals",
+        lambda: {"count": 0, "approvals": []},
+    )
+
+    assert dispatch(session, "/approvals") is True
+
+    text = output(console)
+    assert "PENDING APPROVALS" in text
+    assert "No live interrupts for this thread." in text
+    assert "SEEDED BUSINESS APPROVALS (0)" in text
+    assert "EMP-006" in text
+
+
+def test_approvals_command_lists_a_live_interrupt(session, console, monkeypatch):
+    payload = {
+        "title": "Update Product",
+        "operation_id": "thread-1:call-1",
+        "arguments": {"product_id": "PRD-1001", "selling_price": 95000},
+    }
+    monkeypatch.setattr(
+        session.chat_service,
+        "get_pending_interrupt",
+        lambda thread_id: {"interrupt_id": "int-1", "value": payload},
+    )
+
+    assert dispatch(session, "/approvals") is True
+
+    text = output(console)
+    assert "LIVE GRAPH INTERRUPT" in text
+    assert "Update Product" in text
+    assert "thread-1:call-1" in text
+    assert "PRD-1001" in text
+
+
+def test_session_process_prefers_the_approval_prompt(session, monkeypatch):
+    captured = {}
+
+    def fake_process(console, chat_service, thread_id, message, ask=None):
+        captured["ask"] = ask
+
+    monkeypatch.setattr(
+        "agentic_chatbot.cli.chat.process_message", fake_process
+    )
+
+    approval_ask = lambda question, completions=(): "a"
+    session.approval_ask = approval_ask
+    session.process("hello")
+
+    assert captured["ask"] is approval_ask
 
 
 def test_plain_text_is_not_a_command(session):

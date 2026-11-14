@@ -1,0 +1,4374 @@
+{
+  "metadata": {
+    "dataset_name": "BAYAZID Distribution Ltd — ERP Inventory",
+    "version": "1.0.0",
+    "description": "Fictional electronics and office-equipment distribution company operating in Bangladesh. The dataset is designed for practising agentic tool calling, human-in-the-loop approvals, and ERP business workflows.",
+    "currency": "BDT",
+    "date_format": "YYYY-MM-DD",
+    "timezone": "Asia/Dhaka",
+    "last_updated": "2026-11-14T19:21:47+06:00",
+    "fictional_notice": "All people, companies, email addresses, telephone numbers, addresses, and transactions in this dataset are fictional and exist only for demonstration."
+  },
+  "categories": [
+    {
+      "category_id": "CAT-001",
+      "name": "Electronics",
+      "description": "General electronic equipment and devices.",
+      "parent_category_id": null,
+      "is_active": true
+    },
+    {
+      "category_id": "CAT-002",
+      "name": "Computers",
+      "description": "Laptops, desktops, and computing devices.",
+      "parent_category_id": "CAT-001",
+      "is_active": true
+    },
+    {
+      "category_id": "CAT-003",
+      "name": "Computer Accessories",
+      "description": "Keyboards, mice, chargers, and bags.",
+      "parent_category_id": "CAT-002",
+      "is_active": true
+    },
+    {
+      "category_id": "CAT-004",
+      "name": "Networking Equipment",
+      "description": "Switches, routers, and structured cabling.",
+      "parent_category_id": "CAT-001",
+      "is_active": true
+    },
+    {
+      "category_id": "CAT-005",
+      "name": "Office Supplies",
+      "description": "Consumables and everyday office items.",
+      "parent_category_id": null,
+      "is_active": true
+    },
+    {
+      "category_id": "CAT-006",
+      "name": "Furniture",
+      "description": "Office chairs, desks, and storage furniture.",
+      "parent_category_id": null,
+      "is_active": true
+    },
+    {
+      "category_id": "CAT-007",
+      "name": "Printers",
+      "description": "Printers and printer consumables.",
+      "parent_category_id": "CAT-001",
+      "is_active": true
+    },
+    {
+      "category_id": "CAT-008",
+      "name": "Storage Devices",
+      "description": "SSDs, hard drives, flash drives, and NAS units.",
+      "parent_category_id": "CAT-002",
+      "is_active": true
+    },
+    {
+      "category_id": "CAT-009",
+      "name": "Power & UPS",
+      "description": "Uninterruptible power supplies and surge protection.",
+      "parent_category_id": "CAT-001",
+      "is_active": true
+    },
+    {
+      "category_id": "CAT-010",
+      "name": "Stationery",
+      "description": "Pens, markers, files, and stationery packs.",
+      "parent_category_id": "CAT-005",
+      "is_active": true
+    }
+  ],
+  "units": [
+    {
+      "unit_id": "UNT-001",
+      "name": "Piece",
+      "symbol": "pcs"
+    },
+    {
+      "unit_id": "UNT-002",
+      "name": "Box",
+      "symbol": "box"
+    },
+    {
+      "unit_id": "UNT-003",
+      "name": "Pack",
+      "symbol": "pack"
+    },
+    {
+      "unit_id": "UNT-004",
+      "name": "Carton",
+      "symbol": "ctn"
+    },
+    {
+      "unit_id": "UNT-005",
+      "name": "Set",
+      "symbol": "set"
+    }
+  ],
+  "products": [
+    {
+      "product_id": "PRD-1001",
+      "sku": "LAP-BIZ-14-001",
+      "name": "Latitude Business Laptop 14",
+      "category_id": "CAT-002",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-001",
+      "description": "14-inch business laptop, 16GB RAM, 512GB SSD.",
+      "purchase_price": 72000,
+      "selling_price": 89500,
+      "reorder_level": 8,
+      "barcode": "880100001001",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1002",
+      "sku": "LAP-VTX-15-002",
+      "name": "Vertex ProBook 15 Laptop",
+      "category_id": "CAT-002",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-001",
+      "description": "15-inch performance laptop for design work.",
+      "purchase_price": 91000,
+      "selling_price": 112000,
+      "reorder_level": 5,
+      "barcode": "880100001002",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1003",
+      "sku": "DSK-CMP-05-003",
+      "name": "Compact Desktop PC i5",
+      "category_id": "CAT-002",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-001",
+      "description": "Small-form-factor desktop with a mid-range processor.",
+      "purchase_price": 50000,
+      "selling_price": 62000,
+      "reorder_level": 6,
+      "barcode": "880100001003",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1004",
+      "sku": "DSK-AIO-24-004",
+      "name": "All-in-One Desktop 24",
+      "category_id": "CAT-002",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-002",
+      "description": "24-inch all-in-one desktop for office counters.",
+      "purchase_price": 63500,
+      "selling_price": 78000,
+      "reorder_level": 4,
+      "barcode": "880100001004",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1005",
+      "sku": "TAB-NOVA-10-005",
+      "name": "NovaTab 10 Tablet",
+      "category_id": "CAT-001",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-002",
+      "description": "10-inch tablet for field sales presentations.",
+      "purchase_price": 22000,
+      "selling_price": 28500,
+      "reorder_level": 10,
+      "barcode": "880100001005",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1006",
+      "sku": "MON-LED-27-006",
+      "name": "27-inch LED Monitor",
+      "category_id": "CAT-001",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-002",
+      "description": "27-inch full-HD monitor with HDMI and DisplayPort.",
+      "purchase_price": 18000,
+      "selling_price": 23500,
+      "reorder_level": 12,
+      "barcode": "880100001006",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1007",
+      "sku": "MON-LED-24-007",
+      "name": "24-inch LED Monitor",
+      "category_id": "CAT-001",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-002",
+      "description": "24-inch office monitor with height adjustment.",
+      "purchase_price": 12500,
+      "selling_price": 16500,
+      "reorder_level": 15,
+      "barcode": "880100001007",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1008",
+      "sku": "ACC-KBD-WL-008",
+      "name": "Wireless Keyboard",
+      "category_id": "CAT-003",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-004",
+      "description": "Full-size wireless keyboard with a numeric keypad.",
+      "purchase_price": 1550,
+      "selling_price": 2200,
+      "reorder_level": 30,
+      "barcode": "880100001008",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1009",
+      "sku": "ACC-MSE-WL-009",
+      "name": "Wireless Mouse",
+      "category_id": "CAT-003",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-004",
+      "description": "Ergonomic wireless mouse with USB receiver.",
+      "purchase_price": 980,
+      "selling_price": 1450,
+      "reorder_level": 40,
+      "barcode": "880100001009",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1010",
+      "sku": "ACC-DCK-USBC-010",
+      "name": "USB-C Docking Station",
+      "category_id": "CAT-003",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-001",
+      "description": "Docking station with dual display and Ethernet.",
+      "purchase_price": 6200,
+      "selling_price": 8500,
+      "reorder_level": 10,
+      "barcode": "880100001010",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1011",
+      "sku": "ACC-CHG-65W-011",
+      "name": "65W USB-C Charger",
+      "category_id": "CAT-003",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-008",
+      "description": "Compact 65W USB-C power adapter.",
+      "purchase_price": 2200,
+      "selling_price": 3200,
+      "reorder_level": 20,
+      "barcode": "880100001011",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1012",
+      "sku": "ACC-BAG-LAP-012",
+      "name": "Laptop Backpack",
+      "category_id": "CAT-003",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-004",
+      "description": "Padded 15-inch laptop backpack.",
+      "purchase_price": 1900,
+      "selling_price": 2800,
+      "reorder_level": 25,
+      "barcode": "880100001012",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1013",
+      "sku": "NET-SW-08-013",
+      "name": "8-Port Gigabit Switch",
+      "category_id": "CAT-004",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-003",
+      "description": "Unmanaged 8-port gigabit Ethernet switch.",
+      "purchase_price": 4500,
+      "selling_price": 6200,
+      "reorder_level": 10,
+      "barcode": "880100001013",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1014",
+      "sku": "NET-SW-24-014",
+      "name": "24-Port Gigabit Switch",
+      "category_id": "CAT-004",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-003",
+      "description": "Rack-mount 24-port gigabit switch.",
+      "purchase_price": 11200,
+      "selling_price": 14500,
+      "reorder_level": 6,
+      "barcode": "880100001014",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1015",
+      "sku": "NET-RTR-AX-015",
+      "name": "Wireless Router AX1800",
+      "category_id": "CAT-004",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-003",
+      "description": "Dual-band Wi-Fi 6 office router.",
+      "purchase_price": 5300,
+      "selling_price": 7200,
+      "reorder_level": 10,
+      "barcode": "880100001015",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1016",
+      "sku": "NET-CAT6-2M-016",
+      "name": "Cat6 Patch Cable 2m",
+      "category_id": "CAT-004",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-003",
+      "description": "Moulded Cat6 patch cable, 2 metres.",
+      "purchase_price": 240,
+      "selling_price": 380,
+      "reorder_level": 100,
+      "barcode": "880100001016",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1017",
+      "sku": "NET-CAT6-5M-017",
+      "name": "Cat6 Patch Cable 5m",
+      "category_id": "CAT-004",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-003",
+      "description": "Moulded Cat6 patch cable, 5 metres.",
+      "purchase_price": 410,
+      "selling_price": 620,
+      "reorder_level": 80,
+      "barcode": "880100001017",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1018",
+      "sku": "PRN-LSR-MONO-018",
+      "name": "Laser Printer Mono",
+      "category_id": "CAT-007",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-006",
+      "description": "Monochrome laser printer for workgroups.",
+      "purchase_price": 25500,
+      "selling_price": 32000,
+      "reorder_level": 5,
+      "barcode": "880100001018",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1019",
+      "sku": "PRN-INK-COL-019",
+      "name": "Color Inkjet Printer",
+      "category_id": "CAT-007",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-006",
+      "description": "Colour inkjet printer with scanner.",
+      "purchase_price": 14200,
+      "selling_price": 18500,
+      "reorder_level": 6,
+      "barcode": "880100001019",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1020",
+      "sku": "PRN-TNR-UNI-020",
+      "name": "Toner Cartridge",
+      "category_id": "CAT-007",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-006",
+      "description": "Replacement toner cartridge for mono laser printers.",
+      "purchase_price": 3900,
+      "selling_price": 5200,
+      "reorder_level": 12,
+      "barcode": "880100001020",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1021",
+      "sku": "OFF-PPR-A4-021",
+      "name": "A4 Copy Paper",
+      "category_id": "CAT-005",
+      "unit_id": "UNT-004",
+      "supplier_id": "SUP-009",
+      "description": "Carton of five A4 copy-paper reams.",
+      "purchase_price": 1980,
+      "selling_price": 2450,
+      "reorder_level": 20,
+      "barcode": "880100001021",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1022",
+      "sku": "STN-PEN-BP-022",
+      "name": "Ballpoint Pen",
+      "category_id": "CAT-010",
+      "unit_id": "UNT-002",
+      "supplier_id": "SUP-009",
+      "description": "Box of fifty blue ballpoint pens.",
+      "purchase_price": 290,
+      "selling_price": 420,
+      "reorder_level": 40,
+      "barcode": "880100001022",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1023",
+      "sku": "STN-STP-MED-023",
+      "name": "Stapler Medium",
+      "category_id": "CAT-010",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-009",
+      "description": "Medium-duty metal office stapler.",
+      "purchase_price": 430,
+      "selling_price": 650,
+      "reorder_level": 25,
+      "barcode": "880100001023",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1024",
+      "sku": "STN-MKR-WB-024",
+      "name": "Whiteboard Marker",
+      "category_id": "CAT-010",
+      "unit_id": "UNT-003",
+      "supplier_id": "SUP-009",
+      "description": "Pack of twelve assorted whiteboard markers.",
+      "purchase_price": 250,
+      "selling_price": 380,
+      "reorder_level": 50,
+      "barcode": "880100001024",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1025",
+      "sku": "STN-FLD-PK-025",
+      "name": "File Folder",
+      "category_id": "CAT-010",
+      "unit_id": "UNT-003",
+      "supplier_id": "SUP-009",
+      "description": "Pack of twenty-five document folders.",
+      "purchase_price": 340,
+      "selling_price": 520,
+      "reorder_level": 30,
+      "barcode": "880100001025",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1026",
+      "sku": "FUR-CHR-ERG-026",
+      "name": "Ergonomic Office Chair",
+      "category_id": "CAT-006",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-005",
+      "description": "Mesh-back ergonomic chair with lumbar support.",
+      "purchase_price": 14200,
+      "selling_price": 18500,
+      "reorder_level": 6,
+      "barcode": "880100001026",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1027",
+      "sku": "FUR-DSK-160-027",
+      "name": "Executive Desk 160cm",
+      "category_id": "CAT-006",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-005",
+      "description": "160cm executive desk with cable management.",
+      "purchase_price": 20500,
+      "selling_price": 26500,
+      "reorder_level": 4,
+      "barcode": "880100001027",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1028",
+      "sku": "FUR-TBL-8S-028",
+      "name": "Meeting Table 8-Seater",
+      "category_id": "CAT-006",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-005",
+      "description": "Eight-seater conference table.",
+      "purchase_price": 37500,
+      "selling_price": 48000,
+      "reorder_level": 2,
+      "barcode": "880100001028",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1029",
+      "sku": "FUR-CAB-STL-029",
+      "name": "Steel Filing Cabinet",
+      "category_id": "CAT-006",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-005",
+      "description": "Four-drawer steel filing cabinet.",
+      "purchase_price": 11800,
+      "selling_price": 15500,
+      "reorder_level": 5,
+      "barcode": "880100001029",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1030",
+      "sku": "STO-SSD-1TB-030",
+      "name": "1TB NVMe SSD",
+      "category_id": "CAT-008",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-007",
+      "description": "1TB NVMe solid-state drive.",
+      "purchase_price": 7400,
+      "selling_price": 9800,
+      "reorder_level": 12,
+      "barcode": "880100001030",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1031",
+      "sku": "STO-HDD-2TB-031",
+      "name": "2TB Portable HDD",
+      "category_id": "CAT-008",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-007",
+      "description": "2TB USB portable hard drive.",
+      "purchase_price": 6200,
+      "selling_price": 8200,
+      "reorder_level": 10,
+      "barcode": "880100001031",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1032",
+      "sku": "STO-USB-128-032",
+      "name": "128GB USB Flash Drive",
+      "category_id": "CAT-008",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-007",
+      "description": "128GB USB 3.2 flash drive.",
+      "purchase_price": 1100,
+      "selling_price": 1650,
+      "reorder_level": 40,
+      "barcode": "880100001032",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1033",
+      "sku": "STO-NAS-4B-033",
+      "name": "4-Bay NAS Enclosure",
+      "category_id": "CAT-008",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-007",
+      "description": "Four-bay network storage enclosure.",
+      "purchase_price": 30500,
+      "selling_price": 38500,
+      "reorder_level": 3,
+      "barcode": "880100001033",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1034",
+      "sku": "PWR-UPS-1500-034",
+      "name": "1500VA UPS",
+      "category_id": "CAT-009",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-008",
+      "description": "Line-interactive 1500VA uninterruptible power supply.",
+      "purchase_price": 9600,
+      "selling_price": 12500,
+      "reorder_level": 8,
+      "barcode": "880100001034",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1035",
+      "sku": "PWR-UPS-650-035",
+      "name": "650VA UPS",
+      "category_id": "CAT-009",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-008",
+      "description": "Compact 650VA desktop UPS.",
+      "purchase_price": 4700,
+      "selling_price": 6200,
+      "reorder_level": 12,
+      "barcode": "880100001035",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    },
+    {
+      "product_id": "PRD-1036",
+      "sku": "PWR-SRG-6S-036",
+      "name": "Surge Protector 6-Socket",
+      "category_id": "CAT-009",
+      "unit_id": "UNT-001",
+      "supplier_id": "SUP-008",
+      "description": "Six-socket surge protector with a two-metre cord.",
+      "purchase_price": 980,
+      "selling_price": 1450,
+      "reorder_level": 30,
+      "barcode": "880100001036",
+      "is_active": true,
+      "created_at": "2025-11-01T09:30:00+06:00",
+      "updated_at": "2026-10-01T09:30:00+06:00"
+    }
+  ],
+  "suppliers": [
+    {
+      "supplier_id": "SUP-001",
+      "name": "Dhaka Tech Imports",
+      "contact_person": "Mahmudul Hasan",
+      "email": "orders@dhakatechimports.example",
+      "phone": "+8801711000101",
+      "address": "12 Kawran Bazar, Dhaka 1215",
+      "payment_terms_days": 30,
+      "outstanding_balance": 145000,
+      "is_active": true
+    },
+    {
+      "supplier_id": "SUP-002",
+      "name": "Chattogram Digital Supply",
+      "contact_person": "Ayesha Siddika",
+      "email": "sales@ctgdigitalsupply.example",
+      "phone": "+8801711000102",
+      "address": "45 Agrabad, Chattogram 4100",
+      "payment_terms_days": 21,
+      "outstanding_balance": 82000,
+      "is_active": true
+    },
+    {
+      "supplier_id": "SUP-003",
+      "name": "Sylhet Network Traders",
+      "contact_person": "Rashed Ahmed",
+      "email": "info@sylhetnetwork.example",
+      "phone": "+8801711000103",
+      "address": "9 Zindabazar, Sylhet 3100",
+      "payment_terms_days": 30,
+      "outstanding_balance": 54000,
+      "is_active": true
+    },
+    {
+      "supplier_id": "SUP-004",
+      "name": "Bengal Office Depot",
+      "contact_person": "Nazmul Islam",
+      "email": "supply@bengaloffice.example",
+      "phone": "+8801711000104",
+      "address": "77 Motijheel, Dhaka 1000",
+      "payment_terms_days": 45,
+      "outstanding_balance": 23000,
+      "is_active": true
+    },
+    {
+      "supplier_id": "SUP-005",
+      "name": "Padma Furniture Works",
+      "contact_person": "Shafiqur Rahman",
+      "email": "orders@padmafurniture.example",
+      "phone": "+8801711000105",
+      "address": "31 Boalia, Rajshahi 6100",
+      "payment_terms_days": 30,
+      "outstanding_balance": 0,
+      "is_active": true
+    },
+    {
+      "supplier_id": "SUP-006",
+      "name": "Karnaphuli Print Solutions",
+      "contact_person": "Tahmina Akter",
+      "email": "print@karnaphuliprint.example",
+      "phone": "+8801711000106",
+      "address": "18 Nasirabad, Chattogram 4200",
+      "payment_terms_days": 30,
+      "outstanding_balance": 61000,
+      "is_active": true
+    },
+    {
+      "supplier_id": "SUP-007",
+      "name": "Meghna Storage Systems",
+      "contact_person": "Arif Hossain",
+      "email": "storage@meghnasystems.example",
+      "phone": "+8801711000107",
+      "address": "5 Uttara Sector 7, Dhaka 1230",
+      "payment_terms_days": 30,
+      "outstanding_balance": 37000,
+      "is_active": true
+    },
+    {
+      "supplier_id": "SUP-008",
+      "name": "Rajshahi Power Equipment",
+      "contact_person": "Momena Khatun",
+      "email": "power@rajshahipower.example",
+      "phone": "+8801711000108",
+      "address": "22 Shaheb Bazar, Rajshahi 6100",
+      "payment_terms_days": 21,
+      "outstanding_balance": 19000,
+      "is_active": true
+    },
+    {
+      "supplier_id": "SUP-009",
+      "name": "Barisal Stationery House",
+      "contact_person": "Jahangir Alam",
+      "email": "stationery@barisalhouse.example",
+      "phone": "+8801711000109",
+      "address": "14 Sadar Road, Barisal 8200",
+      "payment_terms_days": 15,
+      "outstanding_balance": 8000,
+      "is_active": true
+    }
+  ],
+  "customers": [
+    {
+      "customer_id": "CUS-001",
+      "name": "Aurora Retail Ltd",
+      "customer_type": "business",
+      "contact_person": "Farzana Rahman",
+      "email": "accounts@auroraretail.example",
+      "phone": "+8801811000201",
+      "billing_address": "House 12, Road 5, Dhanmondi, Dhaka 1209",
+      "shipping_address": "Plot 7, Tejgaon Industrial Area, Dhaka 1208",
+      "credit_limit": 500000,
+      "outstanding_balance": 0,
+      "is_active": true,
+      "created_at": "2024-02-01T09:30:00+06:00"
+    },
+    {
+      "customer_id": "CUS-002",
+      "name": "Bright Future Academy",
+      "customer_type": "business",
+      "contact_person": "Moinul karim Zamal",
+      "email": "purchase@brightfuture.example",
+      "phone": "+8801811000202",
+      "billing_address": "23 Shahbagh, Dhaka 1000",
+      "shipping_address": "23 Shahbagh, Dhaka 1000",
+      "credit_limit": 400000,
+      "outstanding_balance": 30588,
+      "is_active": true,
+      "created_at": "2024-02-10T09:30:00+06:00"
+    },
+    {
+      "customer_id": "CUS-003",
+      "name": "Coastal Logistics Ltd",
+      "customer_type": "business",
+      "contact_person": "Sharmin Akter",
+      "email": "finance@coastallogistics.example",
+      "phone": "+8801811000203",
+      "billing_address": "88 Agrabad, Chattogram 4100",
+      "shipping_address": "Port Road, Chattogram 4100",
+      "credit_limit": 750000,
+      "outstanding_balance": 0,
+      "is_active": true,
+      "created_at": "2024-03-01T09:30:00+06:00"
+    },
+    {
+      "customer_id": "CUS-004",
+      "name": "Delta Design Studio",
+      "customer_type": "business",
+      "contact_person": "Adnan Chowdhury",
+      "email": "accounts@deltadesign.example",
+      "phone": "+8801811000204",
+      "billing_address": "42 Gulshan 1, Dhaka 1212",
+      "shipping_address": "42 Gulshan 1, Dhaka 1212",
+      "credit_limit": 350000,
+      "outstanding_balance": 128100,
+      "is_active": true,
+      "created_at": "2024-03-15T09:30:00+06:00"
+    },
+    {
+      "customer_id": "CUS-005",
+      "name": "Eastern Traders",
+      "customer_type": "business",
+      "contact_person": "Nasir Uddin",
+      "email": "purchase@easterntraders.example",
+      "phone": "+8801811000205",
+      "billing_address": "15 Khatunganj, Chattogram 4000",
+      "shipping_address": "15 Khatunganj, Chattogram 4000",
+      "credit_limit": 600000,
+      "outstanding_balance": 34650,
+      "is_active": true,
+      "created_at": "2024-04-01T09:30:00+06:00"
+    },
+    {
+      "customer_id": "CUS-006",
+      "name": "Friendship Pharmacy",
+      "customer_type": "business",
+      "contact_person": "Dr. Nasreen Haque",
+      "email": "admin@friendshippharmacy.example",
+      "phone": "+8801811000206",
+      "billing_address": "9 Zindabazar, Sylhet 3100",
+      "shipping_address": "9 Zindabazar, Sylhet 3100",
+      "credit_limit": 250000,
+      "outstanding_balance": 0,
+      "is_active": true,
+      "created_at": "2024-04-12T09:30:00+06:00"
+    },
+    {
+      "customer_id": "CUS-007",
+      "name": "Green Valley School",
+      "customer_type": "business",
+      "contact_person": "Rezaul Karim",
+      "email": "purchase@greenvalley.example",
+      "phone": "+8801811000207",
+      "billing_address": "Sector 11, Uttara, Dhaka 1230",
+      "shipping_address": "Sector 11, Uttara, Dhaka 1230",
+      "credit_limit": 500000,
+      "outstanding_balance": 93350,
+      "is_active": true,
+      "created_at": "2024-05-02T09:30:00+06:00"
+    },
+    {
+      "customer_id": "CUS-008",
+      "name": "Hasan & Sons",
+      "customer_type": "business",
+      "contact_person": "Mahbub Hasan",
+      "email": "admin@hasansons.example",
+      "phone": "+8801811000208",
+      "billing_address": "56 Nababpur Road, Dhaka 1100",
+      "shipping_address": "56 Nababpur Road, Dhaka 1100",
+      "credit_limit": 300000,
+      "outstanding_balance": 83580,
+      "is_active": true,
+      "created_at": "2024-05-20T09:30:00+06:00"
+    },
+    {
+      "customer_id": "CUS-009",
+      "name": "Imran Hossain",
+      "customer_type": "individual",
+      "contact_person": "",
+      "email": "imran.hossain@example.com",
+      "phone": "+8801811000209",
+      "billing_address": "House 4, Mirpur 10, Dhaka 1216",
+      "shipping_address": "House 4, Mirpur 10, Dhaka 1216",
+      "credit_limit": 100000,
+      "outstanding_balance": 0,
+      "is_active": true,
+      "created_at": "2024-06-01T09:30:00+06:00"
+    },
+    {
+      "customer_id": "CUS-010",
+      "name": "Jannatul Ferdous",
+      "customer_type": "individual",
+      "contact_person": "",
+      "email": "jannatul.ferdous@example.com",
+      "phone": "+8801811000210",
+      "billing_address": "House 8, Bashundhara R/A, Dhaka 1229",
+      "shipping_address": "House 8, Bashundhara R/A, Dhaka 1229",
+      "credit_limit": 150000,
+      "outstanding_balance": 0,
+      "is_active": true,
+      "created_at": "2024-06-11T09:30:00+06:00"
+    },
+    {
+      "customer_id": "CUS-011",
+      "name": "Karnaphuli Textiles",
+      "customer_type": "business",
+      "contact_person": "Anwar Hossain",
+      "email": "finance@karnaphulitextiles.example",
+      "phone": "+8801811000211",
+      "billing_address": "Industrial Plot 4, Kalurghat, Chattogram 4200",
+      "shipping_address": "Industrial Plot 4, Kalurghat, Chattogram 4200",
+      "credit_limit": 800000,
+      "outstanding_balance": 0,
+      "is_active": true,
+      "created_at": "2024-07-01T09:30:00+06:00"
+    },
+    {
+      "customer_id": "CUS-012",
+      "name": "Lighthouse Media",
+      "customer_type": "business",
+      "contact_person": "Sohana Islam",
+      "email": "accounts@lighthousemedia.example",
+      "phone": "+8801811000212",
+      "billing_address": "12 Banani, Dhaka 1213",
+      "shipping_address": "12 Banani, Dhaka 1213",
+      "credit_limit": 450000,
+      "outstanding_balance": 54975,
+      "is_active": true,
+      "created_at": "2024-07-15T09:30:00+06:00"
+    },
+    {
+      "customer_id": "CUS-013",
+      "name": "Mahanagar Bank",
+      "customer_type": "business",
+      "contact_person": "Kazi Mahmud",
+      "email": "it.purchase@mahanagarbank.example",
+      "phone": "+8801811000213",
+      "billing_address": "Head Office, Motijheel, Dhaka 1000",
+      "shipping_address": "Head Office, Motijheel, Dhaka 1000",
+      "credit_limit": 1200000,
+      "outstanding_balance": 0,
+      "is_active": true,
+      "created_at": "2024-08-01T09:30:00+06:00"
+    },
+    {
+      "customer_id": "CUS-014",
+      "name": "Nabila Rahman",
+      "customer_type": "individual",
+      "contact_person": "",
+      "email": "nabila.rahman@example.com",
+      "phone": "+8801811000214",
+      "billing_address": "Flat 5B, Mohammadpur, Dhaka 1207",
+      "shipping_address": "Flat 5B, Mohammadpur, Dhaka 1207",
+      "credit_limit": 120000,
+      "outstanding_balance": 66255,
+      "is_active": true,
+      "created_at": "2024-08-18T09:30:00+06:00"
+    },
+    {
+      "customer_id": "CUS-015",
+      "name": "Orient Travels",
+      "customer_type": "business",
+      "contact_person": "Shahidul Alam",
+      "email": "admin@orienttravels.example",
+      "phone": "+8801811000215",
+      "billing_address": "33 Dilkusha, Dhaka 1000",
+      "shipping_address": "33 Dilkusha, Dhaka 1000",
+      "credit_limit": 350000,
+      "outstanding_balance": 0,
+      "is_active": true,
+      "created_at": "2024-09-01T09:30:00+06:00"
+    },
+    {
+      "customer_id": "CUS-016",
+      "name": "Padma Engineering",
+      "customer_type": "business",
+      "contact_person": "Lutfor Rahman",
+      "email": "purchase@padmaengineering.example",
+      "phone": "+8801811000216",
+      "billing_address": "27 Boalia, Rajshahi 6100",
+      "shipping_address": "27 Boalia, Rajshahi 6100",
+      "credit_limit": 500000,
+      "outstanding_balance": 0,
+      "is_active": true,
+      "created_at": "2024-09-20T09:30:00+06:00"
+    },
+    {
+      "customer_id": "CUS-017",
+      "name": "Quiet Corner Cafe",
+      "customer_type": "business",
+      "contact_person": "Tania Sultana",
+      "email": "accounts@quietcorner.example",
+      "phone": "+8801811000217",
+      "billing_address": "18 Dhanmondi 27, Dhaka 1209",
+      "shipping_address": "18 Dhanmondi 27, Dhaka 1209",
+      "credit_limit": 200000,
+      "outstanding_balance": 5593,
+      "is_active": true,
+      "created_at": "2024-10-05T09:30:00+06:00"
+    },
+    {
+      "customer_id": "CUS-018",
+      "name": "Rafid Ahmed",
+      "customer_type": "individual",
+      "contact_person": "",
+      "email": "rafid.ahmed@example.com",
+      "phone": "+8801811000218",
+      "billing_address": "House 3, CDA Avenue, Chattogram 4000",
+      "shipping_address": "House 3, CDA Avenue, Chattogram 4000",
+      "credit_limit": 180000,
+      "outstanding_balance": 0,
+      "is_active": true,
+      "created_at": "2024-10-22T09:30:00+06:00"
+    }
+  ],
+  "employees": [
+    {
+      "employee_id": "EMP-001",
+      "name": "Rafiqul Islam",
+      "role": "Sales Representative",
+      "department": "Sales",
+      "email": "rafiqul.islam@bayazid.example",
+      "manager_id": "EMP-002",
+      "is_active": true,
+      "created_at": "2024-01-10T09:30:00+06:00"
+    },
+    {
+      "employee_id": "EMP-002",
+      "name": "Nusrat Jahan",
+      "role": "Sales Manager",
+      "department": "Sales",
+      "email": "nusrat.jahan@bayazid.example",
+      "manager_id": null,
+      "is_active": true,
+      "created_at": "2024-01-05T09:30:00+06:00"
+    },
+    {
+      "employee_id": "EMP-003",
+      "name": "Kamal Hossain",
+      "role": "Warehouse Manager",
+      "department": "Operations",
+      "email": "kamal.hossain@bayazid.example",
+      "manager_id": null,
+      "is_active": true,
+      "created_at": "2024-01-06T09:30:00+06:00"
+    },
+    {
+      "employee_id": "EMP-004",
+      "name": "Farhana Akter",
+      "role": "Inventory Officer",
+      "department": "Operations",
+      "email": "farhana.akter@bayazid.example",
+      "manager_id": "EMP-003",
+      "is_active": true,
+      "created_at": "2024-02-01T09:30:00+06:00"
+    },
+    {
+      "employee_id": "EMP-005",
+      "name": "Tanvir Ahmed",
+      "role": "Accountant",
+      "department": "Finance",
+      "email": "tanvir.ahmed@bayazid.example",
+      "manager_id": "EMP-006",
+      "is_active": true,
+      "created_at": "2024-02-10T09:30:00+06:00"
+    },
+    {
+      "employee_id": "EMP-006",
+      "name": "Shirin Sultana",
+      "role": "Finance Controller",
+      "department": "Finance",
+      "email": "shirin.sultana@bayazid.example",
+      "manager_id": null,
+      "is_active": true,
+      "created_at": "2024-01-07T09:30:00+06:00"
+    },
+    {
+      "employee_id": "EMP-007",
+      "name": "Mizanur Rahman",
+      "role": "Purchase Manager",
+      "department": "Procurement",
+      "email": "mizanur.rahman@bayazid.example",
+      "manager_id": null,
+      "is_active": true,
+      "created_at": "2024-01-08T09:30:00+06:00"
+    },
+    {
+      "employee_id": "EMP-008",
+      "name": "Sadia Karim",
+      "role": "Sales Representative",
+      "department": "Sales",
+      "email": "sadia.karim@bayazid.example",
+      "manager_id": "EMP-002",
+      "is_active": true,
+      "created_at": "2024-03-01T09:30:00+06:00"
+    },
+    {
+      "employee_id": "EMP-009",
+      "name": "Imran Chowdhury",
+      "role": "System Administrator",
+      "department": "IT",
+      "email": "imran.chowdhury@bayazid.example",
+      "manager_id": null,
+      "is_active": true,
+      "created_at": "2024-01-09T09:30:00+06:00"
+    },
+    {
+      "employee_id": "EMP-010",
+      "name": "Rehana Begum",
+      "role": "Inventory Officer",
+      "department": "Operations",
+      "email": "rehana.begum@bayazid.example",
+      "manager_id": "EMP-003",
+      "is_active": true,
+      "created_at": "2024-04-15T09:30:00+06:00"
+    }
+  ],
+  "warehouses": [
+    {
+      "warehouse_id": "WH-001",
+      "name": "Dhaka Main Warehouse",
+      "location": "Tejgaon, Dhaka",
+      "manager_employee_id": "EMP-003",
+      "is_active": true,
+      "created_at": "2024-01-15T09:30:00+06:00"
+    },
+    {
+      "warehouse_id": "WH-002",
+      "name": "Chattogram Branch Warehouse",
+      "location": "Agrabad, Chattogram",
+      "manager_employee_id": "EMP-010",
+      "is_active": true,
+      "created_at": "2024-01-15T09:30:00+06:00"
+    },
+    {
+      "warehouse_id": "WH-003",
+      "name": "Sylhet Distribution Center",
+      "location": "Zindabazar, Sylhet",
+      "manager_employee_id": "EMP-004",
+      "is_active": true,
+      "created_at": "2024-01-15T09:30:00+06:00"
+    }
+  ],
+  "stock": [
+    {
+      "stock_id": "STK-0001",
+      "product_id": "PRD-1001",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 18,
+      "quantity_reserved": 4,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0002",
+      "product_id": "PRD-1001",
+      "warehouse_id": "WH-002",
+      "quantity_on_hand": 6,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0003",
+      "product_id": "PRD-1001",
+      "warehouse_id": "WH-003",
+      "quantity_on_hand": 2,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0004",
+      "product_id": "PRD-1002",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 7,
+      "quantity_reserved": 1,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0005",
+      "product_id": "PRD-1002",
+      "warehouse_id": "WH-002",
+      "quantity_on_hand": 3,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0006",
+      "product_id": "PRD-1003",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 3,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0007",
+      "product_id": "PRD-1003",
+      "warehouse_id": "WH-002",
+      "quantity_on_hand": 2,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0008",
+      "product_id": "PRD-1004",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 9,
+      "quantity_reserved": 2,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0009",
+      "product_id": "PRD-1004",
+      "warehouse_id": "WH-003",
+      "quantity_on_hand": 4,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0010",
+      "product_id": "PRD-1005",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 12,
+      "quantity_reserved": 3,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0011",
+      "product_id": "PRD-1005",
+      "warehouse_id": "WH-002",
+      "quantity_on_hand": 6,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0012",
+      "product_id": "PRD-1006",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 14,
+      "quantity_reserved": 2,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0013",
+      "product_id": "PRD-1006",
+      "warehouse_id": "WH-002",
+      "quantity_on_hand": 8,
+      "quantity_reserved": 1,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0014",
+      "product_id": "PRD-1006",
+      "warehouse_id": "WH-003",
+      "quantity_on_hand": 4,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0015",
+      "product_id": "PRD-1007",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 20,
+      "quantity_reserved": 5,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0016",
+      "product_id": "PRD-1007",
+      "warehouse_id": "WH-002",
+      "quantity_on_hand": 10,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0017",
+      "product_id": "PRD-1008",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 42,
+      "quantity_reserved": 6,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0018",
+      "product_id": "PRD-1008",
+      "warehouse_id": "WH-002",
+      "quantity_on_hand": 25,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0019",
+      "product_id": "PRD-1008",
+      "warehouse_id": "WH-003",
+      "quantity_on_hand": 12,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0020",
+      "product_id": "PRD-1009",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 55,
+      "quantity_reserved": 10,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0021",
+      "product_id": "PRD-1009",
+      "warehouse_id": "WH-002",
+      "quantity_on_hand": 30,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0022",
+      "product_id": "PRD-1010",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 13,
+      "quantity_reserved": 2,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0023",
+      "product_id": "PRD-1010",
+      "warehouse_id": "WH-003",
+      "quantity_on_hand": 5,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0024",
+      "product_id": "PRD-1011",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 26,
+      "quantity_reserved": 4,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0025",
+      "product_id": "PRD-1011",
+      "warehouse_id": "WH-002",
+      "quantity_on_hand": 14,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0026",
+      "product_id": "PRD-1012",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 31,
+      "quantity_reserved": 3,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0027",
+      "product_id": "PRD-1012",
+      "warehouse_id": "WH-003",
+      "quantity_on_hand": 9,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0028",
+      "product_id": "PRD-1013",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 8,
+      "quantity_reserved": 1,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0029",
+      "product_id": "PRD-1013",
+      "warehouse_id": "WH-002",
+      "quantity_on_hand": 6,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0030",
+      "product_id": "PRD-1014",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 2,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0031",
+      "product_id": "PRD-1014",
+      "warehouse_id": "WH-002",
+      "quantity_on_hand": 2,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0032",
+      "product_id": "PRD-1015",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 11,
+      "quantity_reserved": 2,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0033",
+      "product_id": "PRD-1015",
+      "warehouse_id": "WH-002",
+      "quantity_on_hand": 5,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0034",
+      "product_id": "PRD-1015",
+      "warehouse_id": "WH-003",
+      "quantity_on_hand": 3,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0035",
+      "product_id": "PRD-1016",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 180,
+      "quantity_reserved": 20,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0036",
+      "product_id": "PRD-1016",
+      "warehouse_id": "WH-002",
+      "quantity_on_hand": 90,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0037",
+      "product_id": "PRD-1016",
+      "warehouse_id": "WH-003",
+      "quantity_on_hand": 40,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0038",
+      "product_id": "PRD-1017",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 120,
+      "quantity_reserved": 15,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0039",
+      "product_id": "PRD-1017",
+      "warehouse_id": "WH-002",
+      "quantity_on_hand": 60,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0040",
+      "product_id": "PRD-1018",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 6,
+      "quantity_reserved": 1,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0041",
+      "product_id": "PRD-1018",
+      "warehouse_id": "WH-002",
+      "quantity_on_hand": 2,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0042",
+      "product_id": "PRD-1019",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 100,
+      "quantity_reserved": 0,
+      "updated_at": "2026-11-14T19:21:47+06:00"
+    },
+    {
+      "stock_id": "STK-0043",
+      "product_id": "PRD-1020",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 6,
+      "quantity_reserved": 1,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0044",
+      "product_id": "PRD-1020",
+      "warehouse_id": "WH-002",
+      "quantity_on_hand": 4,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0045",
+      "product_id": "PRD-1021",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 35,
+      "quantity_reserved": 4,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0046",
+      "product_id": "PRD-1021",
+      "warehouse_id": "WH-002",
+      "quantity_on_hand": 18,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0047",
+      "product_id": "PRD-1021",
+      "warehouse_id": "WH-003",
+      "quantity_on_hand": 10,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0048",
+      "product_id": "PRD-1022",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 60,
+      "quantity_reserved": 5,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0049",
+      "product_id": "PRD-1022",
+      "warehouse_id": "WH-002",
+      "quantity_on_hand": 30,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0050",
+      "product_id": "PRD-1023",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 28,
+      "quantity_reserved": 2,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0051",
+      "product_id": "PRD-1023",
+      "warehouse_id": "WH-003",
+      "quantity_on_hand": 12,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0052",
+      "product_id": "PRD-1024",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 64,
+      "quantity_reserved": 6,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0053",
+      "product_id": "PRD-1024",
+      "warehouse_id": "WH-002",
+      "quantity_on_hand": 30,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0054",
+      "product_id": "PRD-1025",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 38,
+      "quantity_reserved": 3,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0055",
+      "product_id": "PRD-1025",
+      "warehouse_id": "WH-002",
+      "quantity_on_hand": 20,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0056",
+      "product_id": "PRD-1026",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 9,
+      "quantity_reserved": 2,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0057",
+      "product_id": "PRD-1026",
+      "warehouse_id": "WH-002",
+      "quantity_on_hand": 4,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0058",
+      "product_id": "PRD-1026",
+      "warehouse_id": "WH-003",
+      "quantity_on_hand": 2,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0059",
+      "product_id": "PRD-1027",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 5,
+      "quantity_reserved": 1,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0060",
+      "product_id": "PRD-1027",
+      "warehouse_id": "WH-003",
+      "quantity_on_hand": 2,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0061",
+      "product_id": "PRD-1028",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 1,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0062",
+      "product_id": "PRD-1029",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 7,
+      "quantity_reserved": 1,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0063",
+      "product_id": "PRD-1029",
+      "warehouse_id": "WH-002",
+      "quantity_on_hand": 3,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0064",
+      "product_id": "PRD-1030",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 18,
+      "quantity_reserved": 3,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0065",
+      "product_id": "PRD-1030",
+      "warehouse_id": "WH-002",
+      "quantity_on_hand": 8,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0066",
+      "product_id": "PRD-1030",
+      "warehouse_id": "WH-003",
+      "quantity_on_hand": 4,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0067",
+      "product_id": "PRD-1031",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 14,
+      "quantity_reserved": 2,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0068",
+      "product_id": "PRD-1031",
+      "warehouse_id": "WH-002",
+      "quantity_on_hand": 6,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0069",
+      "product_id": "PRD-1032",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 50,
+      "quantity_reserved": 8,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0070",
+      "product_id": "PRD-1032",
+      "warehouse_id": "WH-002",
+      "quantity_on_hand": 25,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0071",
+      "product_id": "PRD-1033",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 1,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0072",
+      "product_id": "PRD-1033",
+      "warehouse_id": "WH-002",
+      "quantity_on_hand": 1,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0073",
+      "product_id": "PRD-1034",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 12,
+      "quantity_reserved": 2,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0074",
+      "product_id": "PRD-1034",
+      "warehouse_id": "WH-002",
+      "quantity_on_hand": 6,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0075",
+      "product_id": "PRD-1035",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 16,
+      "quantity_reserved": 3,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0076",
+      "product_id": "PRD-1035",
+      "warehouse_id": "WH-003",
+      "quantity_on_hand": 8,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0077",
+      "product_id": "PRD-1036",
+      "warehouse_id": "WH-001",
+      "quantity_on_hand": 40,
+      "quantity_reserved": 4,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    },
+    {
+      "stock_id": "STK-0078",
+      "product_id": "PRD-1036",
+      "warehouse_id": "WH-002",
+      "quantity_on_hand": 20,
+      "quantity_reserved": 0,
+      "updated_at": "2026-10-31T09:30:00+06:00"
+    }
+  ],
+  "stock_movements": [
+    {
+      "movement_id": "MOV-0001",
+      "product_id": "PRD-1001",
+      "warehouse_id": "WH-001",
+      "movement_type": "sale",
+      "quantity_change": -1,
+      "reference": "SALE-2026-001",
+      "movement_date": "2026-01-12",
+      "performed_by": "EMP-001",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0002",
+      "product_id": "PRD-1008",
+      "warehouse_id": "WH-001",
+      "movement_type": "sale",
+      "quantity_change": -2,
+      "reference": "SALE-2026-001",
+      "movement_date": "2026-01-12",
+      "performed_by": "EMP-001",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0003",
+      "product_id": "PRD-1006",
+      "warehouse_id": "WH-001",
+      "movement_type": "sale",
+      "quantity_change": -3,
+      "reference": "SALE-2026-002",
+      "movement_date": "2026-01-20",
+      "performed_by": "EMP-008",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0004",
+      "product_id": "PRD-1009",
+      "warehouse_id": "WH-001",
+      "movement_type": "sale",
+      "quantity_change": -5,
+      "reference": "SALE-2026-002",
+      "movement_date": "2026-01-20",
+      "performed_by": "EMP-008",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0005",
+      "product_id": "PRD-1014",
+      "warehouse_id": "WH-002",
+      "movement_type": "sale",
+      "quantity_change": -2,
+      "reference": "SALE-2026-003",
+      "movement_date": "2026-02-05",
+      "performed_by": "EMP-001",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0006",
+      "product_id": "PRD-1016",
+      "warehouse_id": "WH-002",
+      "movement_type": "sale",
+      "quantity_change": -20,
+      "reference": "SALE-2026-003",
+      "movement_date": "2026-02-05",
+      "performed_by": "EMP-001",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0007",
+      "product_id": "PRD-1026",
+      "warehouse_id": "WH-001",
+      "movement_type": "sale",
+      "quantity_change": -4,
+      "reference": "SALE-2026-004",
+      "movement_date": "2026-02-18",
+      "performed_by": "EMP-008",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0008",
+      "product_id": "PRD-1027",
+      "warehouse_id": "WH-001",
+      "movement_type": "sale",
+      "quantity_change": -2,
+      "reference": "SALE-2026-004",
+      "movement_date": "2026-02-18",
+      "performed_by": "EMP-008",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0009",
+      "product_id": "PRD-1013",
+      "warehouse_id": "WH-001",
+      "movement_type": "sale",
+      "quantity_change": -3,
+      "reference": "SALE-2026-005",
+      "movement_date": "2026-03-03",
+      "performed_by": "EMP-001",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0010",
+      "product_id": "PRD-1015",
+      "warehouse_id": "WH-001",
+      "movement_type": "sale",
+      "quantity_change": -2,
+      "reference": "SALE-2026-005",
+      "movement_date": "2026-03-03",
+      "performed_by": "EMP-001",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0011",
+      "product_id": "PRD-1021",
+      "warehouse_id": "WH-003",
+      "movement_type": "sale",
+      "quantity_change": -5,
+      "reference": "SALE-2026-006",
+      "movement_date": "2026-03-15",
+      "performed_by": "EMP-008",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0012",
+      "product_id": "PRD-1022",
+      "warehouse_id": "WH-003",
+      "movement_type": "sale",
+      "quantity_change": -10,
+      "reference": "SALE-2026-006",
+      "movement_date": "2026-03-15",
+      "performed_by": "EMP-008",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0013",
+      "product_id": "PRD-1024",
+      "warehouse_id": "WH-003",
+      "movement_type": "sale",
+      "quantity_change": -8,
+      "reference": "SALE-2026-006",
+      "movement_date": "2026-03-15",
+      "performed_by": "EMP-008",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0014",
+      "product_id": "PRD-1002",
+      "warehouse_id": "WH-001",
+      "movement_type": "sale",
+      "quantity_change": -1,
+      "reference": "SALE-2026-007",
+      "movement_date": "2026-04-02",
+      "performed_by": "EMP-001",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0015",
+      "product_id": "PRD-1010",
+      "warehouse_id": "WH-001",
+      "movement_type": "sale",
+      "quantity_change": -2,
+      "reference": "SALE-2026-007",
+      "movement_date": "2026-04-02",
+      "performed_by": "EMP-001",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0016",
+      "product_id": "PRD-1018",
+      "warehouse_id": "WH-002",
+      "movement_type": "sale",
+      "quantity_change": -2,
+      "reference": "SALE-2026-008",
+      "movement_date": "2026-04-19",
+      "performed_by": "EMP-008",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0017",
+      "product_id": "PRD-1020",
+      "warehouse_id": "WH-002",
+      "movement_type": "sale",
+      "quantity_change": -3,
+      "reference": "SALE-2026-008",
+      "movement_date": "2026-04-19",
+      "performed_by": "EMP-008",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0018",
+      "product_id": "PRD-1034",
+      "warehouse_id": "WH-001",
+      "movement_type": "sale",
+      "quantity_change": -3,
+      "reference": "SALE-2026-009",
+      "movement_date": "2026-05-07",
+      "performed_by": "EMP-001",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0019",
+      "product_id": "PRD-1035",
+      "warehouse_id": "WH-001",
+      "movement_type": "sale",
+      "quantity_change": -4,
+      "reference": "SALE-2026-009",
+      "movement_date": "2026-05-07",
+      "performed_by": "EMP-001",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0020",
+      "product_id": "PRD-1029",
+      "warehouse_id": "WH-001",
+      "movement_type": "sale",
+      "quantity_change": -2,
+      "reference": "SALE-2026-010",
+      "movement_date": "2026-05-21",
+      "performed_by": "EMP-008",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0021",
+      "product_id": "PRD-1028",
+      "warehouse_id": "WH-001",
+      "movement_type": "sale",
+      "quantity_change": -1,
+      "reference": "SALE-2026-010",
+      "movement_date": "2026-05-21",
+      "performed_by": "EMP-008",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0022",
+      "product_id": "PRD-1030",
+      "warehouse_id": "WH-003",
+      "movement_type": "sale",
+      "quantity_change": -5,
+      "reference": "SALE-2026-011",
+      "movement_date": "2026-06-09",
+      "performed_by": "EMP-001",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0023",
+      "product_id": "PRD-1032",
+      "warehouse_id": "WH-003",
+      "movement_type": "sale",
+      "quantity_change": -10,
+      "reference": "SALE-2026-011",
+      "movement_date": "2026-06-09",
+      "performed_by": "EMP-001",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0024",
+      "product_id": "PRD-1004",
+      "warehouse_id": "WH-001",
+      "movement_type": "sale",
+      "quantity_change": -1,
+      "reference": "SALE-2026-012",
+      "movement_date": "2026-06-24",
+      "performed_by": "EMP-008",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0025",
+      "product_id": "PRD-1007",
+      "warehouse_id": "WH-001",
+      "movement_type": "sale",
+      "quantity_change": -2,
+      "reference": "SALE-2026-012",
+      "movement_date": "2026-06-24",
+      "performed_by": "EMP-008",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0026",
+      "product_id": "PRD-1017",
+      "warehouse_id": "WH-002",
+      "movement_type": "sale",
+      "quantity_change": -30,
+      "reference": "SALE-2026-013",
+      "movement_date": "2026-07-11",
+      "performed_by": "EMP-001",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0027",
+      "product_id": "PRD-1016",
+      "warehouse_id": "WH-002",
+      "movement_type": "sale",
+      "quantity_change": -25,
+      "reference": "SALE-2026-013",
+      "movement_date": "2026-07-11",
+      "performed_by": "EMP-001",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0028",
+      "product_id": "PRD-1031",
+      "warehouse_id": "WH-001",
+      "movement_type": "sale",
+      "quantity_change": -3,
+      "reference": "SALE-2026-014",
+      "movement_date": "2026-07-28",
+      "performed_by": "EMP-008",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0029",
+      "product_id": "PRD-1033",
+      "warehouse_id": "WH-001",
+      "movement_type": "sale",
+      "quantity_change": -1,
+      "reference": "SALE-2026-014",
+      "movement_date": "2026-07-28",
+      "performed_by": "EMP-008",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0030",
+      "product_id": "PRD-1005",
+      "warehouse_id": "WH-001",
+      "movement_type": "sale",
+      "quantity_change": -2,
+      "reference": "SALE-2026-015",
+      "movement_date": "2026-08-14",
+      "performed_by": "EMP-001",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0031",
+      "product_id": "PRD-1011",
+      "warehouse_id": "WH-001",
+      "movement_type": "sale",
+      "quantity_change": -3,
+      "reference": "SALE-2026-015",
+      "movement_date": "2026-08-14",
+      "performed_by": "EMP-001",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0032",
+      "product_id": "PRD-1023",
+      "warehouse_id": "WH-003",
+      "movement_type": "sale",
+      "quantity_change": -10,
+      "reference": "SALE-2026-016",
+      "movement_date": "2026-09-02",
+      "performed_by": "EMP-008",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0033",
+      "product_id": "PRD-1025",
+      "warehouse_id": "WH-003",
+      "movement_type": "sale",
+      "quantity_change": -5,
+      "reference": "SALE-2026-016",
+      "movement_date": "2026-09-02",
+      "performed_by": "EMP-008",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0034",
+      "product_id": "PRD-1012",
+      "warehouse_id": "WH-001",
+      "movement_type": "sale",
+      "quantity_change": -4,
+      "reference": "SALE-2026-017",
+      "movement_date": "2026-09-19",
+      "performed_by": "EMP-001",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0035",
+      "product_id": "PRD-1009",
+      "warehouse_id": "WH-001",
+      "movement_type": "sale",
+      "quantity_change": -3,
+      "reference": "SALE-2026-017",
+      "movement_date": "2026-09-19",
+      "performed_by": "EMP-001",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0036",
+      "product_id": "PRD-1013",
+      "warehouse_id": "WH-002",
+      "movement_type": "sale",
+      "quantity_change": -2,
+      "reference": "SALE-2026-018",
+      "movement_date": "2026-10-06",
+      "performed_by": "EMP-008",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0037",
+      "product_id": "PRD-1014",
+      "warehouse_id": "WH-002",
+      "movement_type": "sale",
+      "quantity_change": -1,
+      "reference": "SALE-2026-018",
+      "movement_date": "2026-10-06",
+      "performed_by": "EMP-008",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0038",
+      "product_id": "PRD-1016",
+      "warehouse_id": "WH-002",
+      "movement_type": "sale",
+      "quantity_change": -40,
+      "reference": "SALE-2026-018",
+      "movement_date": "2026-10-06",
+      "performed_by": "EMP-008",
+      "notes": "Goods issued against the sale."
+    },
+    {
+      "movement_id": "MOV-0039",
+      "product_id": "PRD-1001",
+      "warehouse_id": "WH-001",
+      "movement_type": "purchase_receipt",
+      "quantity_change": 5,
+      "reference": "PO-2026-001",
+      "movement_date": "2026-01-15",
+      "performed_by": "EMP-004",
+      "notes": "Goods received into stock."
+    },
+    {
+      "movement_id": "MOV-0040",
+      "product_id": "PRD-1002",
+      "warehouse_id": "WH-001",
+      "movement_type": "purchase_receipt",
+      "quantity_change": 3,
+      "reference": "PO-2026-001",
+      "movement_date": "2026-01-15",
+      "performed_by": "EMP-004",
+      "notes": "Goods received into stock."
+    },
+    {
+      "movement_id": "MOV-0041",
+      "product_id": "PRD-1013",
+      "warehouse_id": "WH-001",
+      "movement_type": "purchase_receipt",
+      "quantity_change": 10,
+      "reference": "PO-2026-002",
+      "movement_date": "2026-02-12",
+      "performed_by": "EMP-004",
+      "notes": "Goods received into stock."
+    },
+    {
+      "movement_id": "MOV-0042",
+      "product_id": "PRD-1015",
+      "warehouse_id": "WH-001",
+      "movement_type": "purchase_receipt",
+      "quantity_change": 5,
+      "reference": "PO-2026-002",
+      "movement_date": "2026-02-12",
+      "performed_by": "EMP-004",
+      "notes": "Goods received into stock."
+    },
+    {
+      "movement_id": "MOV-0043",
+      "product_id": "PRD-1008",
+      "warehouse_id": "WH-002",
+      "movement_type": "purchase_receipt",
+      "quantity_change": 10,
+      "reference": "PO-2026-003",
+      "movement_date": "2026-03-12",
+      "performed_by": "EMP-004",
+      "notes": "Partial receipt: 10 of 20 keyboards."
+    },
+    {
+      "movement_id": "MOV-0044",
+      "product_id": "PRD-1014",
+      "warehouse_id": "WH-001",
+      "movement_type": "stock_adjustment",
+      "quantity_change": -1,
+      "reference": "ADJ-2026-001",
+      "movement_date": "2026-03-31",
+      "performed_by": "EMP-004",
+      "notes": "Damaged unit written off."
+    },
+    {
+      "movement_id": "MOV-0045",
+      "product_id": "PRD-1009",
+      "warehouse_id": "WH-001",
+      "movement_type": "stock_adjustment",
+      "quantity_change": 5,
+      "reference": "ADJ-2026-002",
+      "movement_date": "2026-05-31",
+      "performed_by": "EMP-004",
+      "notes": "Cycle count surplus."
+    },
+    {
+      "movement_id": "MOV-0046",
+      "product_id": "PRD-1020",
+      "warehouse_id": "WH-001",
+      "movement_type": "stock_adjustment",
+      "quantity_change": -2,
+      "reference": "ADJ-2026-003",
+      "movement_date": "2026-06-30",
+      "performed_by": "EMP-004",
+      "notes": "Leaking toner cartridges discarded."
+    },
+    {
+      "movement_id": "MOV-0047",
+      "product_id": "PRD-1032",
+      "warehouse_id": "WH-002",
+      "movement_type": "stock_adjustment",
+      "quantity_change": 3,
+      "reference": "ADJ-2026-004",
+      "movement_date": "2026-08-31",
+      "performed_by": "EMP-010",
+      "notes": "Cycle count surplus."
+    },
+    {
+      "movement_id": "MOV-0048",
+      "product_id": "PRD-1008",
+      "warehouse_id": "WH-001",
+      "movement_type": "transfer_out",
+      "quantity_change": -5,
+      "reference": "TRN-2026-001",
+      "movement_date": "2026-09-01",
+      "performed_by": "EMP-004",
+      "notes": "Transfer to Sylhet distribution center."
+    },
+    {
+      "movement_id": "MOV-0049",
+      "product_id": "PRD-1008",
+      "warehouse_id": "WH-003",
+      "movement_type": "transfer_in",
+      "quantity_change": 5,
+      "reference": "TRN-2026-001",
+      "movement_date": "2026-09-01",
+      "performed_by": "EMP-004",
+      "notes": "Transfer from Dhaka main warehouse."
+    },
+    {
+      "movement_id": "MOV-0050",
+      "product_id": "PRD-1021",
+      "warehouse_id": "WH-001",
+      "movement_type": "transfer_out",
+      "quantity_change": -4,
+      "reference": "TRN-2026-002",
+      "movement_date": "2026-09-10",
+      "performed_by": "EMP-010",
+      "notes": "Transfer to Chattogram branch warehouse."
+    },
+    {
+      "movement_id": "MOV-0051",
+      "product_id": "PRD-1021",
+      "warehouse_id": "WH-002",
+      "movement_type": "transfer_in",
+      "quantity_change": 4,
+      "reference": "TRN-2026-002",
+      "movement_date": "2026-09-10",
+      "performed_by": "EMP-010",
+      "notes": "Transfer from Dhaka main warehouse."
+    },
+    {
+      "movement_id": "MOV-0052",
+      "product_id": "PRD-1009",
+      "warehouse_id": "WH-001",
+      "movement_type": "sales_return",
+      "quantity_change": 1,
+      "reference": "RET-2026-004",
+      "movement_date": "2026-02-05",
+      "performed_by": "EMP-004",
+      "notes": "Returned unit restocked."
+    },
+    {
+      "movement_id": "MOV-0053",
+      "product_id": "PRD-1019",
+      "warehouse_id": "WH-001",
+      "movement_type": "stock_adjustment",
+      "quantity_change": 100,
+      "reference": "ADJ-2026-11-14-0053",
+      "movement_date": "2026-11-14",
+      "performed_by": "EMP-001",
+      "notes": "Stock replenishment"
+    }
+  ],
+  "sales": [
+    {
+      "sale_id": "SALE-2026-001",
+      "sale_date": "2026-01-12",
+      "customer_id": "CUS-001",
+      "sales_employee_id": "EMP-001",
+      "warehouse_id": "WH-001",
+      "status": "paid",
+      "subtotal": 93900,
+      "discount": 0,
+      "tax": 4695,
+      "total": 98595,
+      "currency": "BDT"
+    },
+    {
+      "sale_id": "SALE-2026-002",
+      "sale_date": "2026-01-20",
+      "customer_id": "CUS-002",
+      "sales_employee_id": "EMP-008",
+      "warehouse_id": "WH-001",
+      "status": "partially_paid",
+      "subtotal": 77750,
+      "discount": 1000,
+      "tax": 3838,
+      "total": 80588,
+      "currency": "BDT"
+    },
+    {
+      "sale_id": "SALE-2026-003",
+      "sale_date": "2026-02-05",
+      "customer_id": "CUS-003",
+      "sales_employee_id": "EMP-001",
+      "warehouse_id": "WH-002",
+      "status": "confirmed",
+      "subtotal": 36600,
+      "discount": 0,
+      "tax": 1830,
+      "total": 38430,
+      "currency": "BDT"
+    },
+    {
+      "sale_id": "SALE-2026-004",
+      "sale_date": "2026-02-18",
+      "customer_id": "CUS-004",
+      "sales_employee_id": "EMP-008",
+      "warehouse_id": "WH-001",
+      "status": "invoiced",
+      "subtotal": 127000,
+      "discount": 5000,
+      "tax": 6100,
+      "total": 128100,
+      "currency": "BDT"
+    },
+    {
+      "sale_id": "SALE-2026-005",
+      "sale_date": "2026-03-03",
+      "customer_id": "CUS-005",
+      "sales_employee_id": "EMP-001",
+      "warehouse_id": "WH-001",
+      "status": "invoiced",
+      "subtotal": 33000,
+      "discount": 0,
+      "tax": 1650,
+      "total": 34650,
+      "currency": "BDT"
+    },
+    {
+      "sale_id": "SALE-2026-006",
+      "sale_date": "2026-03-15",
+      "customer_id": "CUS-006",
+      "sales_employee_id": "EMP-008",
+      "warehouse_id": "WH-003",
+      "status": "paid",
+      "subtotal": 19490,
+      "discount": 500,
+      "tax": 950,
+      "total": 19940,
+      "currency": "BDT"
+    },
+    {
+      "sale_id": "SALE-2026-007",
+      "sale_date": "2026-04-02",
+      "customer_id": "CUS-007",
+      "sales_employee_id": "EMP-001",
+      "warehouse_id": "WH-001",
+      "status": "partially_paid",
+      "subtotal": 129000,
+      "discount": 2000,
+      "tax": 6350,
+      "total": 133350,
+      "currency": "BDT"
+    },
+    {
+      "sale_id": "SALE-2026-008",
+      "sale_date": "2026-04-19",
+      "customer_id": "CUS-008",
+      "sales_employee_id": "EMP-008",
+      "warehouse_id": "WH-002",
+      "status": "invoiced",
+      "subtotal": 79600,
+      "discount": 0,
+      "tax": 3980,
+      "total": 83580,
+      "currency": "BDT"
+    },
+    {
+      "sale_id": "SALE-2026-009",
+      "sale_date": "2026-05-07",
+      "customer_id": "CUS-009",
+      "sales_employee_id": "EMP-001",
+      "warehouse_id": "WH-001",
+      "status": "draft",
+      "subtotal": 62300,
+      "discount": 0,
+      "tax": 3115,
+      "total": 65415,
+      "currency": "BDT"
+    },
+    {
+      "sale_id": "SALE-2026-010",
+      "sale_date": "2026-05-21",
+      "customer_id": "CUS-010",
+      "sales_employee_id": "EMP-008",
+      "warehouse_id": "WH-001",
+      "status": "pending_approval",
+      "subtotal": 79000,
+      "discount": 3000,
+      "tax": 3800,
+      "total": 79800,
+      "currency": "BDT"
+    },
+    {
+      "sale_id": "SALE-2026-011",
+      "sale_date": "2026-06-09",
+      "customer_id": "CUS-011",
+      "sales_employee_id": "EMP-001",
+      "warehouse_id": "WH-003",
+      "status": "paid",
+      "subtotal": 65500,
+      "discount": 0,
+      "tax": 3275,
+      "total": 68775,
+      "currency": "BDT"
+    },
+    {
+      "sale_id": "SALE-2026-012",
+      "sale_date": "2026-06-24",
+      "customer_id": "CUS-012",
+      "sales_employee_id": "EMP-008",
+      "warehouse_id": "WH-001",
+      "status": "partially_paid",
+      "subtotal": 111000,
+      "discount": 1500,
+      "tax": 5475,
+      "total": 114975,
+      "currency": "BDT"
+    },
+    {
+      "sale_id": "SALE-2026-013",
+      "sale_date": "2026-07-11",
+      "customer_id": "CUS-013",
+      "sales_employee_id": "EMP-001",
+      "warehouse_id": "WH-002",
+      "status": "confirmed",
+      "subtotal": 28100,
+      "discount": 0,
+      "tax": 1405,
+      "total": 29505,
+      "currency": "BDT"
+    },
+    {
+      "sale_id": "SALE-2026-014",
+      "sale_date": "2026-07-28",
+      "customer_id": "CUS-014",
+      "sales_employee_id": "EMP-008",
+      "warehouse_id": "WH-001",
+      "status": "invoiced",
+      "subtotal": 63100,
+      "discount": 0,
+      "tax": 3155,
+      "total": 66255,
+      "currency": "BDT"
+    },
+    {
+      "sale_id": "SALE-2026-015",
+      "sale_date": "2026-08-14",
+      "customer_id": "CUS-015",
+      "sales_employee_id": "EMP-001",
+      "warehouse_id": "WH-001",
+      "status": "paid",
+      "subtotal": 66600,
+      "discount": 0,
+      "tax": 3330,
+      "total": 69930,
+      "currency": "BDT"
+    },
+    {
+      "sale_id": "SALE-2026-016",
+      "sale_date": "2026-09-02",
+      "customer_id": "CUS-016",
+      "sales_employee_id": "EMP-008",
+      "warehouse_id": "WH-003",
+      "status": "cancelled",
+      "subtotal": 9100,
+      "discount": 0,
+      "tax": 455,
+      "total": 9555,
+      "currency": "BDT"
+    },
+    {
+      "sale_id": "SALE-2026-017",
+      "sale_date": "2026-09-19",
+      "customer_id": "CUS-017",
+      "sales_employee_id": "EMP-001",
+      "warehouse_id": "WH-001",
+      "status": "partially_paid",
+      "subtotal": 15550,
+      "discount": 700,
+      "tax": 743,
+      "total": 15593,
+      "currency": "BDT"
+    },
+    {
+      "sale_id": "SALE-2026-018",
+      "sale_date": "2026-10-06",
+      "customer_id": "CUS-018",
+      "sales_employee_id": "EMP-008",
+      "warehouse_id": "WH-002",
+      "status": "paid",
+      "subtotal": 42100,
+      "discount": 0,
+      "tax": 2105,
+      "total": 44205,
+      "currency": "BDT"
+    }
+  ],
+  "sale_items": [
+    {
+      "sale_item_id": "SLI-0001",
+      "sale_id": "SALE-2026-001",
+      "product_id": "PRD-1001",
+      "quantity": 1,
+      "unit_price": 89500,
+      "line_total": 89500
+    },
+    {
+      "sale_item_id": "SLI-0002",
+      "sale_id": "SALE-2026-001",
+      "product_id": "PRD-1008",
+      "quantity": 2,
+      "unit_price": 2200,
+      "line_total": 4400
+    },
+    {
+      "sale_item_id": "SLI-0003",
+      "sale_id": "SALE-2026-002",
+      "product_id": "PRD-1006",
+      "quantity": 3,
+      "unit_price": 23500,
+      "line_total": 70500
+    },
+    {
+      "sale_item_id": "SLI-0004",
+      "sale_id": "SALE-2026-002",
+      "product_id": "PRD-1009",
+      "quantity": 5,
+      "unit_price": 1450,
+      "line_total": 7250
+    },
+    {
+      "sale_item_id": "SLI-0005",
+      "sale_id": "SALE-2026-003",
+      "product_id": "PRD-1014",
+      "quantity": 2,
+      "unit_price": 14500,
+      "line_total": 29000
+    },
+    {
+      "sale_item_id": "SLI-0006",
+      "sale_id": "SALE-2026-003",
+      "product_id": "PRD-1016",
+      "quantity": 20,
+      "unit_price": 380,
+      "line_total": 7600
+    },
+    {
+      "sale_item_id": "SLI-0007",
+      "sale_id": "SALE-2026-004",
+      "product_id": "PRD-1026",
+      "quantity": 4,
+      "unit_price": 18500,
+      "line_total": 74000
+    },
+    {
+      "sale_item_id": "SLI-0008",
+      "sale_id": "SALE-2026-004",
+      "product_id": "PRD-1027",
+      "quantity": 2,
+      "unit_price": 26500,
+      "line_total": 53000
+    },
+    {
+      "sale_item_id": "SLI-0009",
+      "sale_id": "SALE-2026-005",
+      "product_id": "PRD-1013",
+      "quantity": 3,
+      "unit_price": 6200,
+      "line_total": 18600
+    },
+    {
+      "sale_item_id": "SLI-0010",
+      "sale_id": "SALE-2026-005",
+      "product_id": "PRD-1015",
+      "quantity": 2,
+      "unit_price": 7200,
+      "line_total": 14400
+    },
+    {
+      "sale_item_id": "SLI-0011",
+      "sale_id": "SALE-2026-006",
+      "product_id": "PRD-1021",
+      "quantity": 5,
+      "unit_price": 2450,
+      "line_total": 12250
+    },
+    {
+      "sale_item_id": "SLI-0012",
+      "sale_id": "SALE-2026-006",
+      "product_id": "PRD-1022",
+      "quantity": 10,
+      "unit_price": 420,
+      "line_total": 4200
+    },
+    {
+      "sale_item_id": "SLI-0013",
+      "sale_id": "SALE-2026-006",
+      "product_id": "PRD-1024",
+      "quantity": 8,
+      "unit_price": 380,
+      "line_total": 3040
+    },
+    {
+      "sale_item_id": "SLI-0014",
+      "sale_id": "SALE-2026-007",
+      "product_id": "PRD-1002",
+      "quantity": 1,
+      "unit_price": 112000,
+      "line_total": 112000
+    },
+    {
+      "sale_item_id": "SLI-0015",
+      "sale_id": "SALE-2026-007",
+      "product_id": "PRD-1010",
+      "quantity": 2,
+      "unit_price": 8500,
+      "line_total": 17000
+    },
+    {
+      "sale_item_id": "SLI-0016",
+      "sale_id": "SALE-2026-008",
+      "product_id": "PRD-1018",
+      "quantity": 2,
+      "unit_price": 32000,
+      "line_total": 64000
+    },
+    {
+      "sale_item_id": "SLI-0017",
+      "sale_id": "SALE-2026-008",
+      "product_id": "PRD-1020",
+      "quantity": 3,
+      "unit_price": 5200,
+      "line_total": 15600
+    },
+    {
+      "sale_item_id": "SLI-0018",
+      "sale_id": "SALE-2026-009",
+      "product_id": "PRD-1034",
+      "quantity": 3,
+      "unit_price": 12500,
+      "line_total": 37500
+    },
+    {
+      "sale_item_id": "SLI-0019",
+      "sale_id": "SALE-2026-009",
+      "product_id": "PRD-1035",
+      "quantity": 4,
+      "unit_price": 6200,
+      "line_total": 24800
+    },
+    {
+      "sale_item_id": "SLI-0020",
+      "sale_id": "SALE-2026-010",
+      "product_id": "PRD-1029",
+      "quantity": 2,
+      "unit_price": 15500,
+      "line_total": 31000
+    },
+    {
+      "sale_item_id": "SLI-0021",
+      "sale_id": "SALE-2026-010",
+      "product_id": "PRD-1028",
+      "quantity": 1,
+      "unit_price": 48000,
+      "line_total": 48000
+    },
+    {
+      "sale_item_id": "SLI-0022",
+      "sale_id": "SALE-2026-011",
+      "product_id": "PRD-1030",
+      "quantity": 5,
+      "unit_price": 9800,
+      "line_total": 49000
+    },
+    {
+      "sale_item_id": "SLI-0023",
+      "sale_id": "SALE-2026-011",
+      "product_id": "PRD-1032",
+      "quantity": 10,
+      "unit_price": 1650,
+      "line_total": 16500
+    },
+    {
+      "sale_item_id": "SLI-0024",
+      "sale_id": "SALE-2026-012",
+      "product_id": "PRD-1004",
+      "quantity": 1,
+      "unit_price": 78000,
+      "line_total": 78000
+    },
+    {
+      "sale_item_id": "SLI-0025",
+      "sale_id": "SALE-2026-012",
+      "product_id": "PRD-1007",
+      "quantity": 2,
+      "unit_price": 16500,
+      "line_total": 33000
+    },
+    {
+      "sale_item_id": "SLI-0026",
+      "sale_id": "SALE-2026-013",
+      "product_id": "PRD-1017",
+      "quantity": 30,
+      "unit_price": 620,
+      "line_total": 18600
+    },
+    {
+      "sale_item_id": "SLI-0027",
+      "sale_id": "SALE-2026-013",
+      "product_id": "PRD-1016",
+      "quantity": 25,
+      "unit_price": 380,
+      "line_total": 9500
+    },
+    {
+      "sale_item_id": "SLI-0028",
+      "sale_id": "SALE-2026-014",
+      "product_id": "PRD-1031",
+      "quantity": 3,
+      "unit_price": 8200,
+      "line_total": 24600
+    },
+    {
+      "sale_item_id": "SLI-0029",
+      "sale_id": "SALE-2026-014",
+      "product_id": "PRD-1033",
+      "quantity": 1,
+      "unit_price": 38500,
+      "line_total": 38500
+    },
+    {
+      "sale_item_id": "SLI-0030",
+      "sale_id": "SALE-2026-015",
+      "product_id": "PRD-1005",
+      "quantity": 2,
+      "unit_price": 28500,
+      "line_total": 57000
+    },
+    {
+      "sale_item_id": "SLI-0031",
+      "sale_id": "SALE-2026-015",
+      "product_id": "PRD-1011",
+      "quantity": 3,
+      "unit_price": 3200,
+      "line_total": 9600
+    },
+    {
+      "sale_item_id": "SLI-0032",
+      "sale_id": "SALE-2026-016",
+      "product_id": "PRD-1023",
+      "quantity": 10,
+      "unit_price": 650,
+      "line_total": 6500
+    },
+    {
+      "sale_item_id": "SLI-0033",
+      "sale_id": "SALE-2026-016",
+      "product_id": "PRD-1025",
+      "quantity": 5,
+      "unit_price": 520,
+      "line_total": 2600
+    },
+    {
+      "sale_item_id": "SLI-0034",
+      "sale_id": "SALE-2026-017",
+      "product_id": "PRD-1012",
+      "quantity": 4,
+      "unit_price": 2800,
+      "line_total": 11200
+    },
+    {
+      "sale_item_id": "SLI-0035",
+      "sale_id": "SALE-2026-017",
+      "product_id": "PRD-1009",
+      "quantity": 3,
+      "unit_price": 1450,
+      "line_total": 4350
+    },
+    {
+      "sale_item_id": "SLI-0036",
+      "sale_id": "SALE-2026-018",
+      "product_id": "PRD-1013",
+      "quantity": 2,
+      "unit_price": 6200,
+      "line_total": 12400
+    },
+    {
+      "sale_item_id": "SLI-0037",
+      "sale_id": "SALE-2026-018",
+      "product_id": "PRD-1014",
+      "quantity": 1,
+      "unit_price": 14500,
+      "line_total": 14500
+    },
+    {
+      "sale_item_id": "SLI-0038",
+      "sale_id": "SALE-2026-018",
+      "product_id": "PRD-1016",
+      "quantity": 40,
+      "unit_price": 380,
+      "line_total": 15200
+    }
+  ],
+  "invoices": [
+    {
+      "invoice_id": "INV-2026-001",
+      "sale_id": "SALE-2026-001",
+      "customer_id": "CUS-001",
+      "issue_date": "2026-01-12",
+      "due_date": "2026-02-11",
+      "status": "paid",
+      "total": 98595,
+      "amount_paid": 98595,
+      "balance_due": 0
+    },
+    {
+      "invoice_id": "INV-2026-002",
+      "sale_id": "SALE-2026-002",
+      "customer_id": "CUS-002",
+      "issue_date": "2026-01-20",
+      "due_date": "2026-02-19",
+      "status": "partially_paid",
+      "total": 80588,
+      "amount_paid": 50000,
+      "balance_due": 30588
+    },
+    {
+      "invoice_id": "INV-2026-003",
+      "sale_id": "SALE-2026-004",
+      "customer_id": "CUS-004",
+      "issue_date": "2026-02-18",
+      "due_date": "2026-03-20",
+      "status": "unpaid",
+      "total": 128100,
+      "amount_paid": 0,
+      "balance_due": 128100
+    },
+    {
+      "invoice_id": "INV-2026-004",
+      "sale_id": "SALE-2026-005",
+      "customer_id": "CUS-005",
+      "issue_date": "2026-03-03",
+      "due_date": "2026-04-02",
+      "status": "unpaid",
+      "total": 34650,
+      "amount_paid": 0,
+      "balance_due": 34650
+    },
+    {
+      "invoice_id": "INV-2026-005",
+      "sale_id": "SALE-2026-006",
+      "customer_id": "CUS-006",
+      "issue_date": "2026-03-15",
+      "due_date": "2026-04-14",
+      "status": "paid",
+      "total": 19940,
+      "amount_paid": 19940,
+      "balance_due": 0
+    },
+    {
+      "invoice_id": "INV-2026-006",
+      "sale_id": "SALE-2026-007",
+      "customer_id": "CUS-007",
+      "issue_date": "2026-04-02",
+      "due_date": "2026-05-02",
+      "status": "partially_paid",
+      "total": 133350,
+      "amount_paid": 40000,
+      "balance_due": 93350
+    },
+    {
+      "invoice_id": "INV-2026-007",
+      "sale_id": "SALE-2026-008",
+      "customer_id": "CUS-008",
+      "issue_date": "2026-04-19",
+      "due_date": "2026-05-19",
+      "status": "overdue",
+      "total": 83580,
+      "amount_paid": 0,
+      "balance_due": 83580
+    },
+    {
+      "invoice_id": "INV-2026-008",
+      "sale_id": "SALE-2026-011",
+      "customer_id": "CUS-011",
+      "issue_date": "2026-06-09",
+      "due_date": "2026-07-09",
+      "status": "paid",
+      "total": 68775,
+      "amount_paid": 68775,
+      "balance_due": 0
+    },
+    {
+      "invoice_id": "INV-2026-009",
+      "sale_id": "SALE-2026-012",
+      "customer_id": "CUS-012",
+      "issue_date": "2026-06-24",
+      "due_date": "2026-07-24",
+      "status": "partially_paid",
+      "total": 114975,
+      "amount_paid": 60000,
+      "balance_due": 54975
+    },
+    {
+      "invoice_id": "INV-2026-010",
+      "sale_id": "SALE-2026-014",
+      "customer_id": "CUS-014",
+      "issue_date": "2026-07-28",
+      "due_date": "2026-08-27",
+      "status": "overdue",
+      "total": 66255,
+      "amount_paid": 0,
+      "balance_due": 66255
+    },
+    {
+      "invoice_id": "INV-2026-011",
+      "sale_id": "SALE-2026-015",
+      "customer_id": "CUS-015",
+      "issue_date": "2026-08-14",
+      "due_date": "2026-09-13",
+      "status": "paid",
+      "total": 69930,
+      "amount_paid": 69930,
+      "balance_due": 0
+    },
+    {
+      "invoice_id": "INV-2026-012",
+      "sale_id": "SALE-2026-017",
+      "customer_id": "CUS-017",
+      "issue_date": "2026-09-19",
+      "due_date": "2026-10-19",
+      "status": "partially_paid",
+      "total": 15593,
+      "amount_paid": 10000,
+      "balance_due": 5593
+    },
+    {
+      "invoice_id": "INV-2026-013",
+      "sale_id": "SALE-2026-018",
+      "customer_id": "CUS-018",
+      "issue_date": "2026-10-06",
+      "due_date": "2026-11-05",
+      "status": "paid",
+      "total": 44205,
+      "amount_paid": 44205,
+      "balance_due": 0
+    }
+  ],
+  "payments": [
+    {
+      "payment_id": "PAY-2026-001",
+      "invoice_id": "INV-2026-001",
+      "customer_id": "CUS-001",
+      "payment_date": "2026-01-12",
+      "amount": 49297,
+      "method": "mobile_banking",
+      "reference": "RCPT-2026-0001",
+      "status": "completed"
+    },
+    {
+      "payment_id": "PAY-2026-002",
+      "invoice_id": "INV-2026-001",
+      "customer_id": "CUS-001",
+      "payment_date": "2026-02-11",
+      "amount": 49298,
+      "method": "cash",
+      "reference": "RCPT-2026-0002",
+      "status": "completed"
+    },
+    {
+      "payment_id": "PAY-2026-003",
+      "invoice_id": "INV-2026-002",
+      "customer_id": "CUS-002",
+      "payment_date": "2026-01-20",
+      "amount": 50000,
+      "method": "card",
+      "reference": "RCPT-2026-0003",
+      "status": "completed"
+    },
+    {
+      "payment_id": "PAY-2026-004",
+      "invoice_id": "INV-2026-005",
+      "customer_id": "CUS-006",
+      "payment_date": "2026-03-15",
+      "amount": 19940,
+      "method": "bank_transfer",
+      "reference": "RCPT-2026-0004",
+      "status": "completed"
+    },
+    {
+      "payment_id": "PAY-2026-005",
+      "invoice_id": "INV-2026-006",
+      "customer_id": "CUS-007",
+      "payment_date": "2026-04-02",
+      "amount": 40000,
+      "method": "mobile_banking",
+      "reference": "RCPT-2026-0005",
+      "status": "completed"
+    },
+    {
+      "payment_id": "PAY-2026-006",
+      "invoice_id": "INV-2026-008",
+      "customer_id": "CUS-011",
+      "payment_date": "2026-06-09",
+      "amount": 34387,
+      "method": "cash",
+      "reference": "RCPT-2026-0006",
+      "status": "completed"
+    },
+    {
+      "payment_id": "PAY-2026-007",
+      "invoice_id": "INV-2026-008",
+      "customer_id": "CUS-011",
+      "payment_date": "2026-07-09",
+      "amount": 34388,
+      "method": "card",
+      "reference": "RCPT-2026-0007",
+      "status": "completed"
+    },
+    {
+      "payment_id": "PAY-2026-008",
+      "invoice_id": "INV-2026-009",
+      "customer_id": "CUS-012",
+      "payment_date": "2026-06-24",
+      "amount": 60000,
+      "method": "bank_transfer",
+      "reference": "RCPT-2026-0008",
+      "status": "completed"
+    },
+    {
+      "payment_id": "PAY-2026-009",
+      "invoice_id": "INV-2026-011",
+      "customer_id": "CUS-015",
+      "payment_date": "2026-08-14",
+      "amount": 34965,
+      "method": "mobile_banking",
+      "reference": "RCPT-2026-0009",
+      "status": "completed"
+    },
+    {
+      "payment_id": "PAY-2026-010",
+      "invoice_id": "INV-2026-011",
+      "customer_id": "CUS-015",
+      "payment_date": "2026-09-13",
+      "amount": 34965,
+      "method": "cash",
+      "reference": "RCPT-2026-0010",
+      "status": "completed"
+    },
+    {
+      "payment_id": "PAY-2026-011",
+      "invoice_id": "INV-2026-012",
+      "customer_id": "CUS-017",
+      "payment_date": "2026-09-19",
+      "amount": 10000,
+      "method": "card",
+      "reference": "RCPT-2026-0011",
+      "status": "completed"
+    },
+    {
+      "payment_id": "PAY-2026-012",
+      "invoice_id": "INV-2026-013",
+      "customer_id": "CUS-018",
+      "payment_date": "2026-10-06",
+      "amount": 22102,
+      "method": "bank_transfer",
+      "reference": "RCPT-2026-0012",
+      "status": "completed"
+    },
+    {
+      "payment_id": "PAY-2026-013",
+      "invoice_id": "INV-2026-013",
+      "customer_id": "CUS-018",
+      "payment_date": "2026-11-05",
+      "amount": 22103,
+      "method": "mobile_banking",
+      "reference": "RCPT-2026-0013",
+      "status": "completed"
+    }
+  ],
+  "purchase_orders": [
+    {
+      "purchase_order_id": "PO-2026-001",
+      "supplier_id": "SUP-001",
+      "warehouse_id": "WH-001",
+      "order_date": "2026-01-05",
+      "expected_date": "2026-01-15",
+      "status": "received",
+      "created_by": "EMP-007",
+      "total": 633000,
+      "currency": "BDT"
+    },
+    {
+      "purchase_order_id": "PO-2026-002",
+      "supplier_id": "SUP-003",
+      "warehouse_id": "WH-001",
+      "order_date": "2026-02-02",
+      "expected_date": "2026-02-12",
+      "status": "received",
+      "created_by": "EMP-007",
+      "total": 71500,
+      "currency": "BDT"
+    },
+    {
+      "purchase_order_id": "PO-2026-003",
+      "supplier_id": "SUP-004",
+      "warehouse_id": "WH-002",
+      "order_date": "2026-03-01",
+      "expected_date": "2026-03-15",
+      "status": "partially_received",
+      "created_by": "EMP-007",
+      "total": 50600,
+      "currency": "BDT"
+    },
+    {
+      "purchase_order_id": "PO-2026-004",
+      "supplier_id": "SUP-006",
+      "warehouse_id": "WH-001",
+      "order_date": "2026-04-10",
+      "expected_date": "2026-04-25",
+      "status": "pending_approval",
+      "created_by": "EMP-007",
+      "total": 96000,
+      "currency": "BDT"
+    },
+    {
+      "purchase_order_id": "PO-2026-005",
+      "supplier_id": "SUP-005",
+      "warehouse_id": "WH-003",
+      "order_date": "2026-05-02",
+      "expected_date": "2026-05-20",
+      "status": "approved",
+      "created_by": "EMP-007",
+      "total": 80400,
+      "currency": "BDT"
+    },
+    {
+      "purchase_order_id": "PO-2026-006",
+      "supplier_id": "SUP-007",
+      "warehouse_id": "WH-001",
+      "order_date": "2026-06-01",
+      "expected_date": "2026-06-15",
+      "status": "ordered",
+      "created_by": "EMP-007",
+      "total": 105000,
+      "currency": "BDT"
+    },
+    {
+      "purchase_order_id": "PO-2026-007",
+      "supplier_id": "SUP-008",
+      "warehouse_id": "WH-002",
+      "order_date": "2026-07-03",
+      "expected_date": "2026-07-20",
+      "status": "approved",
+      "created_by": "EMP-007",
+      "total": 66600,
+      "currency": "BDT"
+    },
+    {
+      "purchase_order_id": "PO-2026-008",
+      "supplier_id": "SUP-009",
+      "warehouse_id": "WH-001",
+      "order_date": "2026-08-01",
+      "expected_date": "2026-08-12",
+      "status": "pending_approval",
+      "created_by": "EMP-007",
+      "total": 28500,
+      "currency": "BDT"
+    },
+    {
+      "purchase_order_id": "PO-2026-009",
+      "supplier_id": "SUP-002",
+      "warehouse_id": "WH-001",
+      "order_date": "2026-09-05",
+      "expected_date": "2026-09-18",
+      "status": "cancelled",
+      "created_by": "EMP-007",
+      "total": 181000,
+      "currency": "BDT"
+    }
+  ],
+  "purchase_order_items": [
+    {
+      "po_item_id": "POI-0001",
+      "purchase_order_id": "PO-2026-001",
+      "product_id": "PRD-1001",
+      "quantity": 5,
+      "unit_cost": 72000,
+      "line_total": 360000
+    },
+    {
+      "po_item_id": "POI-0002",
+      "purchase_order_id": "PO-2026-001",
+      "product_id": "PRD-1002",
+      "quantity": 3,
+      "unit_cost": 91000,
+      "line_total": 273000
+    },
+    {
+      "po_item_id": "POI-0003",
+      "purchase_order_id": "PO-2026-002",
+      "product_id": "PRD-1013",
+      "quantity": 10,
+      "unit_cost": 4500,
+      "line_total": 45000
+    },
+    {
+      "po_item_id": "POI-0004",
+      "purchase_order_id": "PO-2026-002",
+      "product_id": "PRD-1015",
+      "quantity": 5,
+      "unit_cost": 5300,
+      "line_total": 26500
+    },
+    {
+      "po_item_id": "POI-0005",
+      "purchase_order_id": "PO-2026-003",
+      "product_id": "PRD-1008",
+      "quantity": 20,
+      "unit_cost": 1550,
+      "line_total": 31000
+    },
+    {
+      "po_item_id": "POI-0006",
+      "purchase_order_id": "PO-2026-003",
+      "product_id": "PRD-1009",
+      "quantity": 20,
+      "unit_cost": 980,
+      "line_total": 19600
+    },
+    {
+      "po_item_id": "POI-0007",
+      "purchase_order_id": "PO-2026-004",
+      "product_id": "PRD-1018",
+      "quantity": 3,
+      "unit_cost": 25500,
+      "line_total": 76500
+    },
+    {
+      "po_item_id": "POI-0008",
+      "purchase_order_id": "PO-2026-004",
+      "product_id": "PRD-1020",
+      "quantity": 5,
+      "unit_cost": 3900,
+      "line_total": 19500
+    },
+    {
+      "po_item_id": "POI-0009",
+      "purchase_order_id": "PO-2026-005",
+      "product_id": "PRD-1026",
+      "quantity": 4,
+      "unit_cost": 14200,
+      "line_total": 56800
+    },
+    {
+      "po_item_id": "POI-0010",
+      "purchase_order_id": "PO-2026-005",
+      "product_id": "PRD-1029",
+      "quantity": 2,
+      "unit_cost": 11800,
+      "line_total": 23600
+    },
+    {
+      "po_item_id": "POI-0011",
+      "purchase_order_id": "PO-2026-006",
+      "product_id": "PRD-1030",
+      "quantity": 10,
+      "unit_cost": 7400,
+      "line_total": 74000
+    },
+    {
+      "po_item_id": "POI-0012",
+      "purchase_order_id": "PO-2026-006",
+      "product_id": "PRD-1031",
+      "quantity": 5,
+      "unit_cost": 6200,
+      "line_total": 31000
+    },
+    {
+      "po_item_id": "POI-0013",
+      "purchase_order_id": "PO-2026-007",
+      "product_id": "PRD-1034",
+      "quantity": 4,
+      "unit_cost": 9600,
+      "line_total": 38400
+    },
+    {
+      "po_item_id": "POI-0014",
+      "purchase_order_id": "PO-2026-007",
+      "product_id": "PRD-1035",
+      "quantity": 6,
+      "unit_cost": 4700,
+      "line_total": 28200
+    },
+    {
+      "po_item_id": "POI-0015",
+      "purchase_order_id": "PO-2026-008",
+      "product_id": "PRD-1021",
+      "quantity": 10,
+      "unit_cost": 1980,
+      "line_total": 19800
+    },
+    {
+      "po_item_id": "POI-0016",
+      "purchase_order_id": "PO-2026-008",
+      "product_id": "PRD-1022",
+      "quantity": 30,
+      "unit_cost": 290,
+      "line_total": 8700
+    },
+    {
+      "po_item_id": "POI-0017",
+      "purchase_order_id": "PO-2026-009",
+      "product_id": "PRD-1004",
+      "quantity": 2,
+      "unit_cost": 63500,
+      "line_total": 127000
+    },
+    {
+      "po_item_id": "POI-0018",
+      "purchase_order_id": "PO-2026-009",
+      "product_id": "PRD-1006",
+      "quantity": 3,
+      "unit_cost": 18000,
+      "line_total": 54000
+    }
+  ],
+  "accounts": [
+    {
+      "account_id": "ACC-1001",
+      "account_code": "1001",
+      "name": "Cash on Hand",
+      "account_type": "Asset",
+      "normal_balance": "debit",
+      "parent_account_id": null,
+      "is_active": true
+    },
+    {
+      "account_id": "ACC-1010",
+      "account_code": "1010",
+      "name": "Bank Account",
+      "account_type": "Asset",
+      "normal_balance": "debit",
+      "parent_account_id": null,
+      "is_active": true
+    },
+    {
+      "account_id": "ACC-1100",
+      "account_code": "1100",
+      "name": "Accounts Receivable",
+      "account_type": "Asset",
+      "normal_balance": "debit",
+      "parent_account_id": null,
+      "is_active": true
+    },
+    {
+      "account_id": "ACC-1200",
+      "account_code": "1200",
+      "name": "Inventory Asset",
+      "account_type": "Asset",
+      "normal_balance": "debit",
+      "parent_account_id": null,
+      "is_active": true
+    },
+    {
+      "account_id": "ACC-2001",
+      "account_code": "2001",
+      "name": "Accounts Payable",
+      "account_type": "Liability",
+      "normal_balance": "credit",
+      "parent_account_id": null,
+      "is_active": true
+    },
+    {
+      "account_id": "ACC-2100",
+      "account_code": "2100",
+      "name": "Tax Payable",
+      "account_type": "Liability",
+      "normal_balance": "credit",
+      "parent_account_id": null,
+      "is_active": true
+    },
+    {
+      "account_id": "ACC-3001",
+      "account_code": "3001",
+      "name": "Owner's Equity",
+      "account_type": "Equity",
+      "normal_balance": "credit",
+      "parent_account_id": null,
+      "is_active": true
+    },
+    {
+      "account_id": "ACC-3100",
+      "account_code": "3100",
+      "name": "Retained Earnings",
+      "account_type": "Equity",
+      "normal_balance": "credit",
+      "parent_account_id": null,
+      "is_active": true
+    },
+    {
+      "account_id": "ACC-4001",
+      "account_code": "4001",
+      "name": "Sales Revenue",
+      "account_type": "Revenue",
+      "normal_balance": "credit",
+      "parent_account_id": null,
+      "is_active": true
+    },
+    {
+      "account_id": "ACC-5001",
+      "account_code": "5001",
+      "name": "Cost of Goods Sold",
+      "account_type": "Expense",
+      "normal_balance": "debit",
+      "parent_account_id": null,
+      "is_active": true
+    },
+    {
+      "account_id": "ACC-5100",
+      "account_code": "5100",
+      "name": "Office Expenses",
+      "account_type": "Expense",
+      "normal_balance": "debit",
+      "parent_account_id": null,
+      "is_active": true
+    },
+    {
+      "account_id": "ACC-5200",
+      "account_code": "5200",
+      "name": "Rent Expense",
+      "account_type": "Expense",
+      "normal_balance": "debit",
+      "parent_account_id": null,
+      "is_active": true
+    },
+    {
+      "account_id": "ACC-5300",
+      "account_code": "5300",
+      "name": "Utility Expense",
+      "account_type": "Expense",
+      "normal_balance": "debit",
+      "parent_account_id": null,
+      "is_active": true
+    },
+    {
+      "account_id": "ACC-5400",
+      "account_code": "5400",
+      "name": "Transportation Expense",
+      "account_type": "Expense",
+      "normal_balance": "debit",
+      "parent_account_id": null,
+      "is_active": true
+    }
+  ],
+  "expenses": [
+    {
+      "expense_id": "EXP-2026-001",
+      "expense_date": "2026-01-05",
+      "account_id": "ACC-5200",
+      "description": "Warehouse rent for January 2026",
+      "amount": 45000,
+      "payment_method": "bank_transfer",
+      "submitted_by": "EMP-005",
+      "status": "paid",
+      "approved_by": "EMP-006"
+    },
+    {
+      "expense_id": "EXP-2026-002",
+      "expense_date": "2026-02-08",
+      "account_id": "ACC-5300",
+      "description": "Electricity and water for February 2026",
+      "amount": 12500,
+      "payment_method": "bank_transfer",
+      "submitted_by": "EMP-005",
+      "status": "paid",
+      "approved_by": "EMP-006"
+    },
+    {
+      "expense_id": "EXP-2026-003",
+      "expense_date": "2026-03-11",
+      "account_id": "ACC-5100",
+      "description": "Office cleaning and supplies",
+      "amount": 6800,
+      "payment_method": "cash",
+      "submitted_by": "EMP-005",
+      "status": "paid",
+      "approved_by": "EMP-006"
+    },
+    {
+      "expense_id": "EXP-2026-004",
+      "expense_date": "2026-04-14",
+      "account_id": "ACC-5400",
+      "description": "Delivery van fuel and tolls",
+      "amount": 9200,
+      "payment_method": "cash",
+      "submitted_by": "EMP-001",
+      "status": "paid",
+      "approved_by": "EMP-006"
+    },
+    {
+      "expense_id": "EXP-2026-005",
+      "expense_date": "2026-09-20",
+      "account_id": "ACC-5100",
+      "description": "Replacement office chairs (pending review)",
+      "amount": 4300,
+      "payment_method": "mobile_banking",
+      "submitted_by": "EMP-008",
+      "status": "pending_approval",
+      "approved_by": ""
+    },
+    {
+      "expense_id": "EXP-2026-006",
+      "expense_date": "2026-10-05",
+      "account_id": "ACC-5300",
+      "description": "Utility bill for October 2026",
+      "amount": 15800,
+      "payment_method": "bank_transfer",
+      "submitted_by": "EMP-005",
+      "status": "pending_approval",
+      "approved_by": ""
+    },
+    {
+      "expense_id": "EXP-2026-007",
+      "expense_date": "2026-10-01",
+      "account_id": "ACC-5200",
+      "description": "Warehouse rent for October 2026",
+      "amount": 45000,
+      "payment_method": "bank_transfer",
+      "submitted_by": "EMP-005",
+      "status": "approved",
+      "approved_by": "EMP-006"
+    },
+    {
+      "expense_id": "EXP-2026-008",
+      "expense_date": "2026-08-22",
+      "account_id": "ACC-5400",
+      "description": "Courier charges outside the approved policy",
+      "amount": 11200,
+      "payment_method": "cash",
+      "submitted_by": "EMP-001",
+      "status": "rejected",
+      "approved_by": ""
+    },
+    {
+      "expense_id": "EXP-2026-009",
+      "expense_date": "2026-11-02",
+      "account_id": "ACC-5100",
+      "description": "Stationery restock draft",
+      "amount": 3500,
+      "payment_method": "card",
+      "submitted_by": "EMP-005",
+      "status": "draft",
+      "approved_by": ""
+    },
+    {
+      "expense_id": "EXP-2026-010",
+      "expense_date": "2026-07-09",
+      "account_id": "ACC-5300",
+      "description": "Internet and telephone for July 2026",
+      "amount": 9800,
+      "payment_method": "mobile_banking",
+      "submitted_by": "EMP-008",
+      "status": "paid",
+      "approved_by": "EMP-006"
+    }
+  ],
+  "journal_entries": [
+    {
+      "journal_entry_id": "JE-2026-001",
+      "entry_date": "2026-01-12",
+      "description": "Invoice INV-2026-001 raised for SALE-2026-001",
+      "status": "posted",
+      "reference": "INV-2026-001",
+      "lines": [
+        {
+          "account_id": "ACC-1100",
+          "debit": 98595,
+          "credit": 0
+        },
+        {
+          "account_id": "ACC-4001",
+          "debit": 0,
+          "credit": 98595
+        }
+      ]
+    },
+    {
+      "journal_entry_id": "JE-2026-002",
+      "entry_date": "2026-01-12",
+      "description": "Payment received against INV-2026-001",
+      "status": "posted",
+      "reference": "INV-2026-001",
+      "lines": [
+        {
+          "account_id": "ACC-1010",
+          "debit": 98595,
+          "credit": 0
+        },
+        {
+          "account_id": "ACC-1100",
+          "debit": 0,
+          "credit": 98595
+        }
+      ]
+    },
+    {
+      "journal_entry_id": "JE-2026-003",
+      "entry_date": "2026-01-15",
+      "description": "Goods received against PO-2026-001",
+      "status": "posted",
+      "reference": "PO-2026-001",
+      "lines": [
+        {
+          "account_id": "ACC-1200",
+          "debit": 436000,
+          "credit": 0
+        },
+        {
+          "account_id": "ACC-2001",
+          "debit": 0,
+          "credit": 436000
+        }
+      ]
+    },
+    {
+      "journal_entry_id": "JE-2026-004",
+      "entry_date": "2026-03-11",
+      "description": "Office expense EXP-2026-003 paid in cash",
+      "status": "posted",
+      "reference": "EXP-2026-003",
+      "lines": [
+        {
+          "account_id": "ACC-5100",
+          "debit": 6800,
+          "credit": 0
+        },
+        {
+          "account_id": "ACC-1001",
+          "debit": 0,
+          "credit": 6800
+        }
+      ]
+    },
+    {
+      "journal_entry_id": "JE-2026-005",
+      "entry_date": "2026-10-31",
+      "description": "Month-end rent accrual draft",
+      "status": "draft",
+      "reference": "EXP-2026-007",
+      "lines": [
+        {
+          "account_id": "ACC-5200",
+          "debit": 45000,
+          "credit": 0
+        },
+        {
+          "account_id": "ACC-2001",
+          "debit": 0,
+          "credit": 45000
+        }
+      ]
+    }
+  ],
+  "sales_targets": [
+    {
+      "target_id": "TGT-2026-001",
+      "employee_id": "EMP-001",
+      "period": "2026-01",
+      "target_amount": 250000,
+      "achieved_amount": 98595
+    },
+    {
+      "target_id": "TGT-2026-002",
+      "employee_id": "EMP-008",
+      "period": "2026-01",
+      "target_amount": 250000,
+      "achieved_amount": 80588
+    },
+    {
+      "target_id": "TGT-2026-003",
+      "employee_id": "EMP-001",
+      "period": "2026-02",
+      "target_amount": 250000,
+      "achieved_amount": 38430
+    },
+    {
+      "target_id": "TGT-2026-004",
+      "employee_id": "EMP-008",
+      "period": "2026-02",
+      "target_amount": 250000,
+      "achieved_amount": 128100
+    },
+    {
+      "target_id": "TGT-2026-005",
+      "employee_id": "EMP-001",
+      "period": "2026-03",
+      "target_amount": 250000,
+      "achieved_amount": 34650
+    },
+    {
+      "target_id": "TGT-2026-006",
+      "employee_id": "EMP-008",
+      "period": "2026-03",
+      "target_amount": 250000,
+      "achieved_amount": 19940
+    },
+    {
+      "target_id": "TGT-2026-007",
+      "employee_id": "EMP-001",
+      "period": "2026-04",
+      "target_amount": 250000,
+      "achieved_amount": 133350
+    },
+    {
+      "target_id": "TGT-2026-008",
+      "employee_id": "EMP-008",
+      "period": "2026-04",
+      "target_amount": 250000,
+      "achieved_amount": 83580
+    },
+    {
+      "target_id": "TGT-2026-009",
+      "employee_id": "EMP-001",
+      "period": "2026-05",
+      "target_amount": 250000,
+      "achieved_amount": 65415
+    },
+    {
+      "target_id": "TGT-2026-010",
+      "employee_id": "EMP-008",
+      "period": "2026-05",
+      "target_amount": 250000,
+      "achieved_amount": 79800
+    }
+  ],
+  "returns": [
+    {
+      "return_id": "RET-2026-001",
+      "sale_id": "SALE-2026-005",
+      "customer_id": "CUS-005",
+      "product_id": "PRD-1013",
+      "quantity": 1,
+      "reason": "Damaged switch housing on arrival",
+      "requested_date": "2026-03-10",
+      "status": "pending_review",
+      "refund_amount": 6200,
+      "approved_by": ""
+    },
+    {
+      "return_id": "RET-2026-002",
+      "sale_id": "SALE-2026-006",
+      "customer_id": "CUS-006",
+      "product_id": "PRD-1021",
+      "quantity": 1,
+      "reason": "Carton was wet and unusable",
+      "requested_date": "2026-03-20",
+      "status": "approved",
+      "refund_amount": 2450,
+      "approved_by": "EMP-006"
+    },
+    {
+      "return_id": "RET-2026-003",
+      "sale_id": "SALE-2026-012",
+      "customer_id": "CUS-012",
+      "product_id": "PRD-1007",
+      "quantity": 1,
+      "reason": "Customer changed the office layout",
+      "requested_date": "2026-07-01",
+      "status": "rejected",
+      "refund_amount": 0,
+      "approved_by": ""
+    },
+    {
+      "return_id": "RET-2026-004",
+      "sale_id": "SALE-2026-002",
+      "customer_id": "CUS-002",
+      "product_id": "PRD-1009",
+      "quantity": 1,
+      "reason": "Mouse scroll wheel defective",
+      "requested_date": "2026-02-02",
+      "status": "processed",
+      "refund_amount": 1450,
+      "approved_by": "EMP-006"
+    },
+    {
+      "return_id": "RET-2026-005",
+      "sale_id": "SALE-2026-018",
+      "customer_id": "CUS-018",
+      "product_id": "PRD-1014",
+      "quantity": 1,
+      "reason": "Switch fan noise above acceptable level",
+      "requested_date": "2026-10-12",
+      "status": "pending_review",
+      "refund_amount": 14500,
+      "approved_by": ""
+    }
+  ],
+  "approvals": [
+    {
+      "approval_id": "APR-2026-001",
+      "action": "purchase_order_approval",
+      "resource_type": "purchase_order",
+      "resource_id": "PO-2026-004",
+      "requested_by": "EMP-007",
+      "assigned_to": "EMP-006",
+      "status": "pending",
+      "reason": "Reorder printers and toner below reorder level.",
+      "requested_at": "2026-04-10T11:20:00+06:00",
+      "reviewed_at": null,
+      "reviewed_by": "",
+      "decision_comment": ""
+    },
+    {
+      "approval_id": "APR-2026-002",
+      "action": "expense_approval",
+      "resource_type": "expense",
+      "resource_id": "EXP-2026-005",
+      "requested_by": "EMP-008",
+      "assigned_to": "EMP-006",
+      "status": "pending",
+      "reason": "Replacement chairs requested by the sales team.",
+      "requested_at": "2026-09-20T15:00:00+06:00",
+      "reviewed_at": null,
+      "reviewed_by": "",
+      "decision_comment": ""
+    },
+    {
+      "approval_id": "APR-2026-003",
+      "action": "sales_discount_approval",
+      "resource_type": "sale",
+      "resource_id": "SALE-2026-010",
+      "requested_by": "EMP-008",
+      "assigned_to": "EMP-002",
+      "status": "pending",
+      "reason": "Customer requested a BDT 3,000 discount on a furniture order.",
+      "requested_at": "2026-05-21T10:10:00+06:00",
+      "reviewed_at": null,
+      "reviewed_by": "",
+      "decision_comment": ""
+    },
+    {
+      "approval_id": "APR-2026-004",
+      "action": "stock_adjustment_approval",
+      "resource_type": "stock_movement",
+      "resource_id": "MOV-0044",
+      "requested_by": "EMP-004",
+      "assigned_to": "EMP-003",
+      "status": "pending",
+      "reason": "Write off a damaged switch after inspection.",
+      "requested_at": "2026-03-31T16:45:00+06:00",
+      "reviewed_at": null,
+      "reviewed_by": "",
+      "decision_comment": ""
+    },
+    {
+      "approval_id": "APR-2026-005",
+      "action": "return_refund_approval",
+      "resource_type": "return",
+      "resource_id": "RET-2026-001",
+      "requested_by": "EMP-001",
+      "assigned_to": "EMP-006",
+      "status": "pending",
+      "reason": "Customer reported a damaged switch on arrival.",
+      "requested_at": "2026-03-10T12:00:00+06:00",
+      "reviewed_at": null,
+      "reviewed_by": "",
+      "decision_comment": ""
+    },
+    {
+      "approval_id": "APR-2026-006",
+      "action": "purchase_order_approval",
+      "resource_type": "purchase_order",
+      "resource_id": "PO-2026-005",
+      "requested_by": "EMP-007",
+      "assigned_to": "EMP-006",
+      "status": "approved",
+      "reason": "Furniture replenishment for the Sylhet center.",
+      "requested_at": "2026-05-02T09:30:00+06:00",
+      "reviewed_at": "2026-05-02T14:15:00+06:00",
+      "reviewed_by": "EMP-006",
+      "decision_comment": "Approved within the quarterly furniture budget."
+    },
+    {
+      "approval_id": "APR-2026-007",
+      "action": "expense_approval",
+      "resource_type": "expense",
+      "resource_id": "EXP-2026-008",
+      "requested_by": "EMP-001",
+      "assigned_to": "EMP-006",
+      "status": "rejected",
+      "reason": "Courier charges outside the approved policy.",
+      "requested_at": "2026-08-22T17:10:00+06:00",
+      "reviewed_at": "2026-08-23T09:05:00+06:00",
+      "reviewed_by": "EMP-006",
+      "decision_comment": "Rejected: use the contracted courier for future shipments."
+    },
+    {
+      "approval_id": "APR-2026-008",
+      "action": "return_refund_approval",
+      "resource_type": "return",
+      "resource_id": "RET-2026-002",
+      "requested_by": "EMP-008",
+      "assigned_to": "EMP-006",
+      "status": "approved",
+      "reason": "Wet paper carton, customer requested a refund.",
+      "requested_at": "2026-03-20T13:40:00+06:00",
+      "reviewed_at": "2026-03-20T16:20:00+06:00",
+      "reviewed_by": "EMP-006",
+      "decision_comment": "Approved; refund and restock the remaining reams."
+    }
+  ],
+  "audit_log": [
+    {
+      "audit_id": "AUD-2026-001",
+      "actor_id": "EMP-006",
+      "action": "approval_granted",
+      "resource_type": "purchase_order",
+      "resource_id": "PO-2026-005",
+      "timestamp": "2026-05-02T14:15:00+06:00",
+      "previous_value": {
+        "status": "pending_approval"
+      },
+      "new_value": {
+        "status": "approved"
+      },
+      "result": "success",
+      "reason": "Within the quarterly furniture budget."
+    },
+    {
+      "audit_id": "AUD-2026-002",
+      "actor_id": "EMP-006",
+      "action": "approval_rejected",
+      "resource_type": "expense",
+      "resource_id": "EXP-2026-008",
+      "timestamp": "2026-08-23T09:05:00+06:00",
+      "previous_value": {
+        "status": "pending_approval"
+      },
+      "new_value": {
+        "status": "rejected"
+      },
+      "result": "rejected",
+      "reason": "Outside the approved courier policy."
+    },
+    {
+      "audit_id": "AUD-2026-003",
+      "actor_id": "EMP-006",
+      "action": "approval_granted",
+      "resource_type": "return",
+      "resource_id": "RET-2026-002",
+      "timestamp": "2026-03-20T16:20:00+06:00",
+      "previous_value": {
+        "status": "pending_review"
+      },
+      "new_value": {
+        "status": "approved"
+      },
+      "result": "success",
+      "reason": "Wet carton confirmed by the warehouse."
+    },
+    {
+      "audit_id": "AUD-2026-004",
+      "actor_id": "EMP-004",
+      "action": "stock_adjusted",
+      "resource_type": "product",
+      "resource_id": "PRD-1014",
+      "timestamp": "2026-03-31T16:50:00+06:00",
+      "previous_value": {
+        "quantity_on_hand": 3
+      },
+      "new_value": {
+        "quantity_on_hand": 2
+      },
+      "result": "success",
+      "reason": "Damaged unit written off."
+    },
+    {
+      "audit_id": "AUD-2026-005",
+      "actor_id": "EMP-004",
+      "action": "stock_adjusted",
+      "resource_type": "product",
+      "resource_id": "PRD-1009",
+      "timestamp": "2026-05-31T11:30:00+06:00",
+      "previous_value": {
+        "quantity_on_hand": 50
+      },
+      "new_value": {
+        "quantity_on_hand": 55
+      },
+      "result": "success",
+      "reason": "Cycle count surplus."
+    },
+    {
+      "audit_id": "AUD-2026-006",
+      "actor_id": "EMP-005",
+      "action": "payment_recorded",
+      "resource_type": "invoice",
+      "resource_id": "INV-2026-002",
+      "timestamp": "2026-01-20T15:10:00+06:00",
+      "previous_value": {
+        "amount_paid": 0
+      },
+      "new_value": {
+        "amount_paid": 50000
+      },
+      "result": "success",
+      "reason": "Partial bank transfer received."
+    },
+    {
+      "audit_id": "AUD-2026-007",
+      "actor_id": "EMP-008",
+      "action": "sale_created",
+      "resource_type": "sale",
+      "resource_id": "SALE-2026-010",
+      "timestamp": "2026-05-21T10:05:00+06:00",
+      "previous_value": null,
+      "new_value": {
+        "status": "pending_approval"
+      },
+      "result": "success",
+      "reason": "Discount requested by the customer."
+    },
+    {
+      "audit_id": "AUD-2026-008",
+      "actor_id": "EMP-007",
+      "action": "purchase_order_created",
+      "resource_type": "purchase_order",
+      "resource_id": "PO-2026-004",
+      "timestamp": "2026-04-10T11:15:00+06:00",
+      "previous_value": null,
+      "new_value": {
+        "status": "pending_approval"
+      },
+      "result": "success",
+      "reason": "Toner stock below reorder level."
+    },
+    {
+      "audit_id": "AUD-2026-009",
+      "actor_id": "EMP-010",
+      "action": "stock_transferred",
+      "resource_type": "product",
+      "resource_id": "PRD-1021",
+      "timestamp": "2026-09-10T09:40:00+06:00",
+      "previous_value": {
+        "warehouse_id": "WH-001"
+      },
+      "new_value": {
+        "warehouse_id": "WH-002"
+      },
+      "result": "success",
+      "reason": "Rebalance paper stock."
+    },
+    {
+      "audit_id": "AUD-2026-010",
+      "actor_id": "EMP-006",
+      "action": "invoice_created",
+      "resource_type": "invoice",
+      "resource_id": "INV-2026-013",
+      "timestamp": "2026-10-06T12:00:00+06:00",
+      "previous_value": null,
+      "new_value": {
+        "status": "paid"
+      },
+      "result": "success",
+      "reason": "Sale confirmed and paid in full."
+    },
+    {
+      "audit_id": "AUD-2026-011",
+      "actor_id": "EMP-003",
+      "action": "stock_adjusted",
+      "resource_type": "product",
+      "resource_id": "PRD-1020",
+      "timestamp": "2026-06-30T18:00:00+06:00",
+      "previous_value": {
+        "quantity_on_hand": 8
+      },
+      "new_value": {
+        "quantity_on_hand": 6
+      },
+      "result": "success",
+      "reason": "Leaking cartridges discarded."
+    },
+    {
+      "audit_id": "AUD-2026-012",
+      "actor_id": "EMP-004",
+      "action": "stock_returned",
+      "resource_type": "return",
+      "resource_id": "RET-2026-004",
+      "timestamp": "2026-02-05T10:20:00+06:00",
+      "previous_value": {
+        "status": "approved"
+      },
+      "new_value": {
+        "status": "processed"
+      },
+      "result": "success",
+      "reason": "Defective mouse restocked."
+    },
+    {
+      "audit_id": "AUD-2026-013",
+      "actor_id": "EMP-006",
+      "action": "approval_granted",
+      "resource_type": "tool",
+      "resource_id": "8c4b5005-1416-4919-be5c-1dff9eb90a5c:call_B1KqDQh7gvLVCrgy7STg9qsq",
+      "timestamp": "2026-11-14T19:06:36+06:00",
+      "previous_value": {
+        "tool": "update_customer",
+        "arguments": {
+          "customer_id": "CUS-002",
+          "contact_person": "Moinul karim Zamal"
+        }
+      },
+      "new_value": {
+        "decision": "approve",
+        "arguments": {
+          "customer_id": "CUS-002",
+          "contact_person": "Moinul karim Zamal"
+        },
+        "outcome": "success",
+        "reviewed_by": "EMP-006"
+      },
+      "result": "success",
+      "reason": ""
+    },
+    {
+      "audit_id": "AUD-2026-014",
+      "actor_id": "EMP-006",
+      "action": "approval_granted",
+      "resource_type": "tool",
+      "resource_id": "fe2c3f00-44d7-4864-83e9-804a0ba41436:call_Qr84QYm4pXn8qhyyxxBNtV6O",
+      "timestamp": "2026-11-14T19:20:53+06:00",
+      "previous_value": {
+        "tool": "adjust_stock",
+        "arguments": {
+          "product_id": "PRD-1019",
+          "warehouse_id": "WH-001",
+          "quantity_change": 100,
+          "reason": "Stock replenishment",
+          "performed_by": "admin"
+        }
+      },
+      "new_value": {
+        "decision": "approve",
+        "arguments": {
+          "product_id": "PRD-1019",
+          "warehouse_id": "WH-001",
+          "quantity_change": 100,
+          "reason": "Stock replenishment",
+          "performed_by": "admin"
+        },
+        "outcome": "failed",
+        "reviewed_by": "EMP-006"
+      },
+      "result": "failed",
+      "reason": "100 product in"
+    },
+    {
+      "audit_id": "AUD-2026-015",
+      "actor_id": "EMP-006",
+      "action": "approval_granted",
+      "resource_type": "tool",
+      "resource_id": "fe2c3f00-44d7-4864-83e9-804a0ba41436:call_z8I05V0bqHBmRFKj6VhmEKqG",
+      "timestamp": "2026-11-14T19:21:47+06:00",
+      "previous_value": {
+        "tool": "adjust_stock",
+        "arguments": {
+          "product_id": "PRD-1019",
+          "warehouse_id": "WH-001",
+          "quantity_change": 100,
+          "reason": "Stock replenishment",
+          "performed_by": "EMP-001"
+        }
+      },
+      "new_value": {
+        "decision": "approve",
+        "arguments": {
+          "product_id": "PRD-1019",
+          "warehouse_id": "WH-001",
+          "quantity_change": 100,
+          "reason": "Stock replenishment",
+          "performed_by": "EMP-001"
+        },
+        "outcome": "success",
+        "reviewed_by": "EMP-006"
+      },
+      "result": "success",
+      "reason": ""
+    }
+  ],
+  "operation_log": [
+    {
+      "operation_id": "8c4b5005-1416-4919-be5c-1dff9eb90a5c:call_B1KqDQh7gvLVCrgy7STg9qsq",
+      "tool": "update_customer",
+      "executed_at": "2026-11-14T19:06:36+06:00",
+      "result": {
+        "customer": {
+          "customer_id": "CUS-002",
+          "name": "Bright Future Academy",
+          "customer_type": "business",
+          "contact_person": "Moinul karim Zamal",
+          "email": "purchase@brightfuture.example",
+          "phone": "+8801811000202",
+          "billing_address": "23 Shahbagh, Dhaka 1000",
+          "shipping_address": "23 Shahbagh, Dhaka 1000",
+          "credit_limit": 400000,
+          "outstanding_balance": 30588,
+          "is_active": true,
+          "created_at": "2024-02-10T09:30:00+06:00"
+        },
+        "previous": {
+          "customer_id": "CUS-002",
+          "name": "Bright Future Academy",
+          "customer_type": "business",
+          "contact_person": "Moinul Karim",
+          "email": "purchase@brightfuture.example",
+          "phone": "+8801811000202",
+          "billing_address": "23 Shahbagh, Dhaka 1000",
+          "shipping_address": "23 Shahbagh, Dhaka 1000",
+          "credit_limit": 400000,
+          "outstanding_balance": 30588,
+          "is_active": true,
+          "created_at": "2024-02-10T09:30:00+06:00"
+        }
+      }
+    },
+    {
+      "operation_id": "fe2c3f00-44d7-4864-83e9-804a0ba41436:call_z8I05V0bqHBmRFKj6VhmEKqG",
+      "tool": "adjust_stock",
+      "executed_at": "2026-11-14T19:21:47+06:00",
+      "result": {
+        "product_id": "PRD-1019",
+        "warehouse_id": "WH-001",
+        "previous_on_hand": 0,
+        "new_on_hand": 100,
+        "quantity_reserved": 0,
+        "available_quantity": 100,
+        "movement": {
+          "movement_id": "MOV-0053",
+          "product_id": "PRD-1019",
+          "warehouse_id": "WH-001",
+          "movement_type": "stock_adjustment",
+          "quantity_change": 100,
+          "reference": "ADJ-2026-11-14-0053",
+          "movement_date": "2026-11-14",
+          "performed_by": "EMP-001",
+          "notes": "Stock replenishment"
+        },
+        "reason": "Stock replenishment"
+      }
+    }
+  ]
+}

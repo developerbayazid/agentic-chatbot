@@ -9,11 +9,12 @@ from rich.console import Console
 
 from agentic_chatbot.cli import console as ui
 from agentic_chatbot.cli import picker
-from agentic_chatbot.cli.chat import build_status
+from agentic_chatbot.cli.chat import build_status, resume_pending
 from agentic_chatbot.cli.commands import COMMANDS, dispatch, get_version
 from agentic_chatbot.cli.input import (
     PlainPrompt,
     build_prompt_session,
+    make_approval_ask,
     make_ask,
     read_input,
 )
@@ -68,8 +69,24 @@ def run_session(
         prompt_session = build_prompt_session(session, COMMANDS) or PlainPrompt()
 
     session.ask = make_ask(prompt_session)
+    session.approval_ask = make_approval_ask(console)
     if picker.supports_interactive(prompt_session):
         session.pick = picker.pick
+
+    # A checkpoint may hold an approval interrupt from a previous process. Offer
+    # it before the normal input loop so the same thread ID resumes correctly.
+    try:
+        resume_pending(
+            console,
+            container.chat_service,
+            session.current_thread_id,
+            session.approval_ask,
+        )
+    except KeyboardInterrupt:
+        console.print()
+    except Exception as error:  # noqa: BLE001 - startup must not crash the CLI
+        logger.debug("pending approval check failed", exc_info=True)
+        ui.error(console, f"Could not check pending approvals: {error}")
 
     while session.running:
         try:

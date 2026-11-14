@@ -14,6 +14,16 @@ tracing sends runs to LangSmith for debugging and monitoring. The code is split
 into presentation, service, graph, retrieval, and persistence layers so a
 FastAPI backend can be added later without rewriting business logic.
 
+The same agent now includes a realistic **ERP-style inventory domain** for
+products, categories, stock, customers, suppliers, sales, invoices, payments,
+purchase orders, expenses, and returns, backed by one inspectable JSON dataset.
+Sensitive operations (price changes, deactivations, stock adjustments, payments,
+purchase orders, expenses, and return approvals) pause the graph with a LangGraph
+`interrupt()` and wait for a human to **approve, edit the arguments, or reject**
+them in the terminal. The pending decision is checkpointed, so it survives a
+restart and resumes on the same thread ID. See [`HITL.md`](./HITL.md)
+and [`src/agentic_chatbot/inventory/README.md`](./src/agentic_chatbot/inventory/README.md).
+
 The terminal experience is a premium **emerald-grid** interface built with
 **Rich** and **prompt_toolkit**: a framed welcome hero with a neural-network grid
 backdrop and live runtime status, a `/` command menu with descriptions, Tab
@@ -35,6 +45,10 @@ For the full design and migration plan, see [`ARCHITECTURE.md`](./ARCHITECTURE.m
 - Add retrieval-augmented generation over local documents with per-namespace
   vector indexes, BM25 keyword indexes, page-level PDF citations, and hybrid
   fusion for better recall.
+- Add an ERP-style inventory domain that demonstrates realistic business
+  workflows over JSON data without introducing an ORM.
+- Practise Human-in-the-Loop with LangGraph interrupts, resume, argument editing,
+  approval/rejection, checkpoint persistence, and idempotent side effects.
 - Add a FastAPI backend and frontend later without restructuring the core.
 
 ## Tech Stack
@@ -54,6 +68,8 @@ For the full design and migration plan, see [`ARCHITECTURE.md`](./ARCHITECTURE.m
 | **Rich**                          | Terminal panels, tables, Markdown, color |
 | **prompt_toolkit**                | Input, autocomplete, history, shortcuts  |
 | **SQLite**                        | Threads, notes, document text/metadata, checkpoints |
+| **JSON inventory dataset**        | ERP demo system of record (atomic writes, no ORM) |
+| **LangGraph interrupts**          | HITL approval, argument editing, and resume |
 | **uv**                            | Package and project management           |
 | **FastAPI / Uvicorn**             | Planned HTTP layer (not implemented yet) |
 | **pytest**                        | Automated tests (no OpenAI calls)        |
@@ -68,7 +84,8 @@ agentic-chatbot/
 ├── uv.lock
 ├── .env.example
 ├── chatbot_memory.db            # SQLite: thread metadata + LangGraph checkpoints
-├── docs/                        # Documents indexed by /ingest
+├── docs/                        # Documents indexed by /ingest + HITL.md
+├── inventory-data/              # ERP demo dataset + pristine seed
 ├── data/faiss/                  # One FAISS index file per namespace
 │
 ├── src/
@@ -103,12 +120,19 @@ agentic-chatbot/
 │       ├── graph/
 │       │   ├── state.py         # ChatState
 │       │   ├── nodes.py         # chat node
-│       │   └── workflow.py      # compiled LangGraph (chat ⇄ tools)
+│       │   ├── approval.py      # HITL interrupt node + routing + tokens
+│       │   └── workflow.py      # compiled LangGraph (chat ⇄ tools/approval)
 │       ├── services/
-│       │   ├── chat_service.py   # streaming turns + history
+│       │   ├── chat_service.py   # streaming turns, history, resume
 │       │   ├── thread_service.py # thread lifecycle
 │       │   ├── title_service.py  # automatic titles
 │       │   └── document_service.py # ingestion, chunking, retrieval
+│       ├── inventory/            # ERP domain (JSON, no ORM)
+│       │   ├── data_access.py    # locked, validated, atomic JSON store
+│       │   ├── validation.py     # dataset integrity checks
+│       │   ├── service.py        # business rules and workflows
+│       │   ├── approvals.py      # sensitive tool policy
+│       │   └── tools/            # 54 grouped inventory tools
 │       └── tools/
 │           ├── builtin.py        # calculator, get_current_time
 │           ├── utilities.py      # local helpers (hash, base64, units, ...)
@@ -116,7 +140,7 @@ agentic-chatbot/
 │           ├── notes.py          # database-backed note tools
 │           ├── documents.py      # search_documents / list_documents
 │           ├── mocks.py          # mocked API tools (weather, search, ...)
-│           └── registry.py       # STATIC_TOOLS / get_tools(repo, documents)
+│           └── registry.py       # STATIC_TOOLS / get_tools(...)
 │
 ├── tests/                       # Pytest suite (fakes + temporary SQLite)
 ├── notebooks/                   # Learning notebooks
@@ -135,16 +159,21 @@ cli/  →  container.py  →  services  →  graph / repository / retrieval  →
   conversation logic, SQL, or graph code lives here.
 - **Services** (`services/`) — chat orchestration, thread lifecycle, titles, and
   document ingestion/retrieval. Independent of any UI or HTTP framework.
-- **Graph** (`graph/`) — LangGraph state, the chat node, the `ToolNode`, and the
-  compiled chatbot.
+- **Graph** (`graph/`) — LangGraph state, the chat node, the `ToolNode`, the
+  HITL `approval` node, and the compiled chatbot.
+- **Inventory** (`inventory/`) — JSON store, dataset validation, ERP business
+  rules, sensitive-tool policy, and 54 grouped tools. It is independent of the
+  CLI and of the graph; the graph receives callbacks, not inventory imports.
 - **Retrieval** (`loaders.py`, `vector_store.py`, `bm25_store.py`, `rrf.py`,
   `embeddings.py`) — text/PDF loading, chunk embeddings with one FAISS index per
   namespace, BM25 keyword indexes over the same SQLite chunks, and RRF fusion of
   the two rankings.
 - **Tools** (`tools/`) — `@tool` implementations registered in `registry.py` and
-  executed by LangGraph's `ToolNode`, including `search_documents`.
+  executed by LangGraph's `ToolNode`/approval node, including `search_documents`
+  and the inventory tool set.
 - **Persistence** (`repository.py`, `database.py`) — thread, note, and document
-  metadata/text SQL. Vectors are not stored in SQLite.
+  metadata/text SQL. Vectors are not stored in SQLite. The inventory dataset is a
+  separate JSON file, not a SQLite concern.
 - **Checkpointer** — `SqliteSaver` stores conversation messages and graph state.
 - **Container** (`container.py`) — builds and owns the SQLite connection,
   checkpointer, LLM, embeddings, vector store, document service, tool-bound LLM,
@@ -207,6 +236,15 @@ RAG_MAX_PDF_BYTES=20000000
 RAG_MAX_PDF_PAGES=200
 ```
 
+Optional inventory settings (defaults shown):
+
+```env
+INVENTORY_DATA_PATH=inventory-data/inventory/inventory_data.json
+INVENTORY_OPERATOR_ID=EMP-006
+INVENTORY_OPERATION_LOG_LIMIT=500
+INVENTORY_AUDIT_LOG_LIMIT=1000
+```
+
 Optional LangSmith tracing (defaults shown):
 
 ```env
@@ -221,6 +259,13 @@ Notes:
 - `DATABASE_PATH` defaults to `chatbot_memory.db` in the current directory.
 - An existing `chatbot_memory.db` is reused as-is; the schema matches previous
   versions of the project.
+- `INVENTORY_DATA_PATH` is cwd-relative. If the file is missing, the CLI still
+  starts and logs a warning; inventory tools are simply not registered.
+- `INVENTORY_OPERATOR_ID` maps the reviewer at the CLI to an employee in the audit
+  trail (default: Shirin Sultana, Finance Controller). An unknown ID falls back to
+  `HUMAN_OPERATOR` and logs a warning.
+- `INVENTORY_OPERATION_LOG_LIMIT` and `INVENTORY_AUDIT_LOG_LIMIT` keep only the
+  newest log entries; older entries are dropped, not archived.
 - `LANGSMITH_TRACING=true` with `LANGSMITH_API_KEY` set enables tracing. See
   [Observability with LangSmith](#observability-with-langsmith).
 - Variables already set in the OS environment take precedence over `.env`.
@@ -437,6 +482,7 @@ suggestions.
 | `/new`     | Create a new conversation                   | Conversation |
 | `/threads` | Open the session picker to switch          | Conversation |
 | `/history` | Show the current conversation history      | Conversation |
+| `/approvals` | Show approvals waiting for this conversation | Conversation |
 | `/rename`  | Rename the current conversation            | Conversation |
 | `/delete`  | Delete a conversation and its checkpoints  | Conversation |
 | _anything else_ | Send a chat message                   | —            |
@@ -513,9 +559,11 @@ Guidelines:
 ## Tools
 
 The tool-bound LLM receives every schema returned by
-`get_tools(notes_repository, document_service)`. When it emits tool calls,
-LangGraph's `ToolNode` executes them and routes back to the chat node for a final
-answer. Tool activity is printed as it happens:
+`get_tools(notes_repository, document_service, inventory_service)`. When it emits
+tool calls, LangGraph's `ToolNode` executes read-only tools and routes back to the
+chat node. Calls whose tool name is in `SENSITIVE_TOOLS` go to the approval node
+instead, which pauses the graph until a human decides. Tool activity is printed as
+it happens:
 
 ```text
 BAYAZID AI
@@ -534,7 +582,7 @@ questions ("Who is Bayazid Hasan?") can trigger `search_documents` even without
 saying "my documents" — while unrelated general knowledge still answers
 directly.
 
-### Registered tools (37)
+### Registered tools (91)
 
 | Category            | Module         | Tools                                                                                                                                                                                                 |
 | ------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -543,6 +591,7 @@ directly.
 | Everyday life       | `life.py`      | `calculate_loan_payment`, `calculate_tip_split`, `calculate_bmi`, `calculate_age`, `days_between`, `convert_timezone`, `estimate_fuel_cost`                                                            |
 | Notes (per thread)  | `notes.py`     | `save_note`, `list_notes`, `search_notes`, `delete_note` — scoped to the active conversation                                                                                                           |
 | Retrieval (RAG)     | `documents.py` | `search_documents`, `list_documents` — hybrid search (FAISS + BM25 fused with RRF) over ingested text and PDFs, one index pair per namespace |
+| Inventory / ERP     | `inventory/tools/` | 54 tools for products, categories, stock, movements, customers, suppliers, sales, invoices, payments, purchase orders, accounts, expenses, returns, and approvals. 15 are HITL-protected. |
 | Mock API services   | `mocks.py`     | `fetch_url`, `get_news`, `get_weather`, `get_stock_price`, `convert_currency`, `send_email`, `send_slack_message`, `create_calendar_event`, `list_calendar_events`, `translate_text`, `find_recipe`, `get_holidays`, `track_package` (`web_search` is defined but currently disabled) |
 
 All tools that need an external service (`mocks.py`) return simulated data and
@@ -587,6 +636,128 @@ returned from `get_tools(notes_repository, document_service)` instead.
 - "Search the web for LangGraph tool calling best practices."
 - "According to my handbook, what's the onboarding process?" (after `/ingest`)
 - "What does the policy PDF say about page 4?"
+
+## Inventory & ERP Demo (HITL)
+
+The agent now understands a fictional Bangladeshi electronics and office-supply
+distributor. The dataset contains 10 categories, 36 products, 9 suppliers, 18
+customers, 10 employees, 3 warehouses, stock and movements, 18 sales, 13 invoices,
+payments, 9 purchase orders, 14 accounts, expenses, journal entries, sales
+targets, returns, approvals, and an audit log. Currency is BDT, dates are
+`YYYY-MM-DD`, and the timezone is `Asia/Dhaka`. All data is fictional. See
+[`inventory-data/README.md`](./inventory-data/README.md) for the entity map and
+counts.
+
+### Read-only questions
+
+These answer directly, without an approval panel:
+
+```text
+How many Latitude Business Laptops are available?
+Which products are running low?
+Show all unpaid invoices.
+How much does customer CUS-004 owe?
+What is our financial position?
+Show stock movements for PRD-1001.
+```
+
+The model maps those to `check_product_availability`, `check_low_stock`,
+`get_outstanding_invoices`, `get_customer_balance`, `get_financial_summary`, and
+`get_stock_movements`.
+
+### Sensitive operations
+
+Fifteen tools change business state and pause for approval:
+`update_product`, `deactivate_product`, `update_customer`, `adjust_stock`,
+`transfer_stock`, `create_sale`, `update_sale`, `cancel_sale`, `create_invoice`,
+`record_payment`, `create_purchase_order`, `update_purchase_order`,
+`receive_purchase_order`, `create_expense`, and `process_return`.
+
+```text
+YOU
+Increase the selling price of PRD-1001 to 95000.
+
+BAYAZID AI
+  ● Executing tool: update_product  ● running
+╭────────────────────── HUMAN APPROVAL REQUIRED ───────────────────────╮
+│ Action: Update Product                                               │
+│                                                                      │
+│ Product: Latitude Business Laptop 14                                 │
+│ SKU: LAP-BIZ-14-001                                                  │
+│ Current Selling Price: BDT 89,500                                    │
+│ Proposed Selling Price: BDT 95,000                                   │
+│                                                                      │
+│ Requested By: AI Agent                                               │
+│ Reason: The agent requested a sensitive inventory operation.         │
+│ Reviewer: Shirin Sultana (EMP-006)                                   │
+│                                                                      │
+│ [A] Approve    [E] Edit Arguments    [R] Reject                      │
+╰──────────────────────────────────────────────────────────────────────╯
+Decision [A]pprove / [E]dit / [R]eject:
+```
+
+- **A** executes the proposal with the original arguments.
+- **E** opens a field-by-field editor. It lists every schema field with its
+  current value, accepts a field number or name, coerces the new value to the
+  declared type, shows only the changed values, and asks for confirmation.
+- **R** executes nothing and returns a rejection to the model.
+
+```text
+Editable arguments
+  1. product_id = 'PRD-1001'
+  2. name = 'Latitude Business Laptop 14 Pro'
+  ...
+Field to edit (number/name, 'c' to cancel, blank to finish): 2
+name [Latitude Business Laptop 14 Pro]: Latitude Business Laptop 14 Supreme
+...
+Proposed argument changes
+  name: 'Latitude Business Laptop 14 Pro' -> 'Latitude Business Laptop 14 Supreme'
+Execute with these arguments? (y/n):
+```
+
+Every approval prompt terminates its own line. A decision prints
+`Approval recorded. Continuing…`; a cancel prints `Returning to chat. Use
+/approvals to inspect pending actions.` In both cases the main framed prompt is
+restored, so the approval screen cannot trap the session. Approval questions use
+a plain console prompt rather than the framed composer, which keeps the main
+`PromptSession` untouched; `/approve`, `/edit`, and `/reject` are accepted as well
+as `A`, `E`, and `R`. `/approvals` is a read-only command that lists the live
+interrupt for the current thread and the seeded pending business approvals.
+
+The panel is followed by the real tool result and the model's final answer. A
+rejected operation is never claimed as successful, and an edited argument is
+reported from the tool result rather than the model's original proposal. Pending
+approvals are stored in the existing `SqliteSaver` checkpoint, so quitting and
+restarting offers the same panel for the restored thread. Repeating a resume
+cannot duplicate a financial or inventory effect: each sensitive call carries an
+`operation_id` recorded in the same atomic JSON write as the mutation.
+
+### What each workflow enforces
+
+- **Delete product** — soft delete only; historical sales, POs, and movements keep
+  their references.
+- **Price or title update** — the panel shows current and proposed values; field
+  edits execute after confirmation and are audited.
+- **Stock adjustment** — a reason is required; on-hand and available quantity can
+  never go negative.
+- **Discount approval** — `update_sale` previews the current discount and projected
+  total; the edited discount is recalculated with the same tax formula.
+- **Purchase order** — created as `pending_approval`; only approved orders can be
+  ordered and received into stock.
+- **Payment** — must be positive and cannot exceed the invoice balance; invoice,
+  customer balance, and sale status update together.
+- **Return** — quantity is bounded by the unreturned amount; approval restocks the
+  warehouse, writes a `sales_return` movement, and records the refund.
+
+Reset the demo dataset after experimenting:
+
+```bash
+cp inventory-data/inventory/inventory_data.seed.json \
+   inventory-data/inventory/inventory_data.json
+```
+
+Read [`HITL.md`](./HITL.md) for the interrupt/resume architecture,
+decision types, idempotency details, and testing scenarios.
 
 ## Knowledge Base (RAG)
 
@@ -683,13 +854,17 @@ Notes:
   a tool; `content` holds the JSON arguments.
 - `TurnEvent(type="tool_result", name=..., content="...")` when that tool
   returns; `content` holds the result.
+- `TurnEvent(type="interrupt", name="approval", payload=...)` when the graph
+  pauses for a sensitive operation and needs a human decision.
 - `TurnEvent(type="done", title=...)` when the turn is persisted; `title` is set
   only when a new title was generated on the first turn.
 
-The CLI prints these events directly (`● Executing tool: …` / `✓ Completed`
-lines for tool activity). A future SSE endpoint can map the same events to `event: token` /
-`event: tool_call` / `event: tool_result` / `event: done` without changing the
-service.
+`ChatService.resume_turn(thread_id, decision)` streams the continuation after an
+approval, using `Command(resume=decision)` on the same thread. The CLI prints
+these events directly (`● Executing tool: …` / `✓ Completed` lines for tool
+activity, an approval panel for `interrupt`). A future SSE endpoint can map the
+same events to `event: token` / `event: tool_call` / `event: tool_result` /
+`event: interrupt` / `event: done` without changing the service.
 
 ## Observability with LangSmith
 
@@ -721,7 +896,13 @@ One SQLite database holds four independent concerns:
    index is in memory only and derived from `document_chunks`, so SQLite remains
    the single source of truth for chunk text.
 4. **Conversation state** — LangGraph checkpoint tables created and managed by
-   `SqliteSaver.setup()`.
+   `SqliteSaver.setup()`. Pending HITL approvals live here too, which is why they
+   survive a restart.
+
+The inventory dataset is deliberately **not** in SQLite. It is one JSON document
+(`INVENTORY_DATA_PATH`) with atomic writes, whole-dataset validation, and a
+process lock. This keeps the ERP exercise inspectable and easy to reset without
+introducing a schema or ORM. See `inventory-data/README.md`.
 
 Deleting a thread removes its checkpoints first, then its metadata. Deleting a
 thread while it is active creates a replacement conversation. Notes and
@@ -778,6 +959,25 @@ Run just the hybrid-search tests:
 uv run pytest tests/test_rrf.py tests/test_bm25_store.py tests/test_hybrid_search.py -v
 ```
 
+Inventory and HITL tests:
+
+| Test file                        | Covers                                                         |
+| -------------------------------- | -------------------------------------------------------------- |
+| `test_inventory_dataset.py`      | dataset validity, FKs, financial/inventory consistency, atomic rollback, concurrent transactions |
+| `test_inventory_service.py`      | catalogue, stock, sales, invoices, payments, POs, returns, idempotency, operator mapping, log retention |
+| `test_inventory_tools.py`        | 54 tools, sensitive/read-only split, descriptions, previews     |
+| `test_hitl.py`                   | interrupt, approve/edit/reject, stale token, multiple approvals, discount and stock workflows, restart, no duplicate execution |
+| `test_cli_approval.py`           | approval panel, field-level editing and type coercion, invalid values, edit cancellation, startup resume |
+| `test_cli_commands.py`           | `/approvals` live-interrupt and seeded-approval rendering        |
+
+```bash
+uv run pytest tests/test_inventory_dataset.py tests/test_inventory_service.py \
+  tests/test_inventory_tools.py tests/test_hitl.py tests/test_cli_approval.py -v
+```
+
+The inventory fixtures copy the dataset into `tmp_path`, so tests never mutate the
+checked-in working file. HITL restart tests use a temporary SQLite checkpointer.
+
 Notable assertions: unknown slash commands are never forwarded to the LLM, plain
 text always is, secrets never appear in status output, and both the
 prompt_toolkit and plain-input paths stay usable.
@@ -814,6 +1014,15 @@ uv run python -m compileall -q src/agentic_chatbot
 - [x] Retrieval-augmented generation (FAISS, one index per namespace)
 - [x] Hybrid search: BM25 + FAISS fused with Reciprocal Rank Fusion
 - [x] PDF ingestion with page-level citations
+- [x] ERP-style inventory domain over an interconnected JSON dataset
+- [x] Dataset validation, atomic writes, and idempotent business operations
+- [x] Human-in-the-Loop approvals with LangGraph interrupts and resume
+- [x] CLI approve / edit-arguments / reject workflow
+- [x] Pending approval persistence across restarts and audit logging
+- [x] Read-only `/approvals` command
+- [x] Field-level approval editing with type coercion
+- [x] Reviewer identity mapped to an employee in audit records
+- [x] Configurable retention caps for operation and audit logs
 - [ ] FastAPI backend integration
 - [ ] Agentic decision-making
 - [ ] Cross-thread memory management

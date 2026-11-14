@@ -3,6 +3,7 @@ import sqlite3
 import pytest
 
 from agentic_chatbot.container import ChatbotContainer, TOOL_GUIDANCE
+from agentic_chatbot.inventory.tools import create_inventory_tools
 from agentic_chatbot.repository import DocumentsRepository, NotesRepository
 from agentic_chatbot.services.chat_service import ChatService
 from agentic_chatbot.services.document_service import DocumentService
@@ -44,7 +45,14 @@ def test_container_creates_schema_and_services(container):
     assert container.document_service._search_mode == "hybrid"
     assert container.document_service._rrf_k == 60
     tool_names = {tool.name for tool in container.tools}
-    assert len(tool_names) == len(STATIC_TOOLS) + 6
+    assert container.inventory_service is not None
+    assert container.inventory_store is not None
+    inventory_names = {
+        tool.name
+        for tool in create_inventory_tools(container.inventory_service)
+    }
+    assert inventory_names <= tool_names
+    assert len(tool_names) == len(STATIC_TOOLS) + 6 + len(inventory_names)
     assert {
         "calculator",
         "get_current_time",

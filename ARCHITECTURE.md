@@ -79,7 +79,8 @@ agentic-chatbot/
         │   ├── __init__.py
         │   ├── state.py         # ChatState (messages + add_messages reducer)
         │   ├── nodes.py         # create_chat_node(llm)
-        │   └── workflow.py      # build_chatbot(llm, checkpointer, tools)
+        │   ├── approval.py      # HITL interrupt node + routing + tokens
+        │   └── workflow.py      # build_chatbot(llm, checkpointer, tools, ...)
         │
         ├── services/
         │   ├── __init__.py
@@ -96,7 +97,27 @@ agentic-chatbot/
             ├── notes.py           # database-backed note tools
             ├── documents.py       # search_documents / list_documents
             ├── mocks.py           # simulated API tools (weather, search, ...)
-            └── registry.py        # STATIC_TOOLS / get_tools(repo, documents)
+            ├── registry.py        # STATIC_TOOLS / get_tools(...)
+            │
+        └── inventory/             # ERP demo domain (additive)
+            ├── data_access.py     # InventoryStore: lock + validate + atomic JSON
+            ├── validation.py      # validate_dataset(): IDs, FKs, money, stock
+            ├── service.py         # InventoryService: business rules/workflows
+            ├── approvals.py       # SENSITIVE_TOOLS policy
+            ├── README.md          # module guide
+            └── tools/             # catalog, stock, parties, sales, procurement,
+                                   # finance, workflows (54 tools)
+```
+
+At the repository root, `inventory-data/inventory/` holds the demo dataset and
+its pristine seed copy:
+
+```text
+inventory-data/
+├── README.md
+└── inventory/
+    ├── inventory_data.json        # working JSON system of record
+    └── inventory_data.seed.json   # pristine baseline
 ```
 
 ---
@@ -150,8 +171,14 @@ agentic-chatbot/
 - `services.thread` → `ThreadRepository` + `SqliteSaver`
 - `services.document` → `DocumentsRepository` + `VectorIndexStore` +
   `BM25IndexStore` + `rrf` + `Embeddings` + `loaders`
-- `graph.workflow` → `graph.nodes` → `graph.state` (+ LangGraph `ToolNode`)
-- `tools.registry` → `tools.builtin`, `tools.notes`, `tools.documents`
+- `graph.workflow` → `graph.nodes` / `graph.approval` → `graph.state`
+  (+ LangGraph `ToolNode`)
+- `tools.registry` → `tools.builtin`, `tools.notes`, `tools.documents`,
+  `inventory.tools`
+- `inventory.tools` → `inventory.service` → `inventory.data_access` →
+  `inventory.validation`
+- `graph.approval` is generic: it receives sensitive-tool titles plus preview and
+  audit callbacks, so it never imports `inventory`
 - `vector_store` → `faiss` + `numpy`; `bm25_store` → `rank_bm25`;
   `loaders` → `pypdf`
 - `repository` → `models` + `sqlite3`
@@ -292,6 +319,19 @@ RAG settings:
 | `rag_max_pdf_bytes`    | `RAG_MAX_PDF_BYTES`    | `20000000`                |
 | `rag_max_pdf_pages`    | `RAG_MAX_PDF_PAGES`    | `200`                     |
 
+Inventory settings:
+
+| Setting                         | Env var                         | Default |
+| ------------------------------- | ------------------------------- | ------- |
+| `inventory_data_path`           | `INVENTORY_DATA_PATH`           | `inventory-data/inventory/inventory_data.json` |
+| `inventory_operator_id`         | `INVENTORY_OPERATOR_ID`         | `EMP-006` |
+| `inventory_operation_log_limit` | `INVENTORY_OPERATION_LOG_LIMIT` | `500` |
+| `inventory_audit_log_limit`     | `INVENTORY_AUDIT_LOG_LIMIT`     | `1000` |
+
+`inventory_operator_id` maps the reviewer at the CLI to an employee for the audit
+trail. The two limits cap the newest entries kept in `operation_log` and
+`audit_log`.
+
 `get_settings()` returns a new `Settings`. Explicit constructor arguments
 override both the environment and `.env`, which is what tests do.
 
@@ -404,11 +444,14 @@ RRF(d) = sum over lists containing d of 1 / (k + rank(d))
   identity, `namespace`, `title`, `source`, `chunk_index`, `page`, `content`, and
   `score` (often the RRF fusion score), plus optional `vector_score` (cosine
   similarity) and `bm25_score` for the individual retrievers.
-- `TurnEvent` — frozen dataclass emitted by `ChatService.stream_turn`:
+- `TurnEvent` — frozen dataclass emitted by `ChatService.stream_turn` and
+  `resume_turn`:
   - `type="token"`, `content="..."` for each streamed chunk
   - `type="tool_call"`, `name=...`, `content=<JSON args>` when the model requests
     a tool
   - `type="tool_result"`, `name=...`, `content="..."` when a tool returns
+  - `type="interrupt"`, `name="approval"`, `payload=<approval payload>` when the
+    graph pauses for a human decision
   - `type="done"`, `title=...` (or `None`) once the turn is persisted
 
 `TurnEvent` deliberately contains no terminal/HTTP concepts, so it can be mapped
@@ -548,11 +591,20 @@ The heart of the conversation logic.
      node's `ToolMessage` results) are skipped so raw tool output never leaks
      into the answer stream.
   4b. For `"updates"` chunks: an `AIMessage` with `tool_calls` from `chat_node`
-     yields `tool_call` events (arguments as JSON); a `ToolMessage` from `tools`
-     yields `tool_result` events.
+     yields `tool_call` events (arguments as JSON); a `ToolMessage` from the
+     `tools` **or** `approval` node yields `tool_result` events; an
+     `__interrupt__` entry yields an `interrupt` event carrying the payload.
   5. After streaming, on the first turn generate and save the title, then yield
      `done` with that title; otherwise touch the thread and yield `done` with
      `title=None`.
+- `resume_turn(thread_id, decision)` → generator of `TurnEvent`. Streams
+  `Command(resume=decision)` through the compiled graph with the same config,
+  maps chunks exactly like `stream_turn`, touches the thread, and yields `done`.
+  No title is generated because the turn already exists.
+- `get_pending_interrupt(thread_id)` → reads `chatbot.get_state(config).tasks` and
+  returns `{"interrupt_id", "value"}` for the first pending interrupt, or `None`.
+  Reading state does not resume the run, so startup can offer the approval panel
+  after a restart.
 
 `ChatService` does **not** print, catch errors, or know about SSE. Callers decide
 how to expose events.
@@ -565,15 +617,21 @@ how to expose events.
 - `nodes.py` — `create_chat_node(llm)` returns a node that invokes the model on
   `state["messages"]` and returns `{"messages": [response]}`. Injecting the LLM
   keeps the node testable.
-- `workflow.py` — `build_chatbot(llm, checkpointer, tools=None)` wires
+- `approval.py` — HITL routing and the interrupt node (see the `inventory/`
+  section and `HITL.md`).
+- `workflow.py` — `build_chatbot(llm, checkpointer, tools=None, *,
+  sensitive_tools=None, preview_operation=None, record_decision=None)` wires
   `START → chat_node`, then:
-  - with tools: a `ToolNode` from `langgraph.prebuilt` plus conditional routing
-    (`tools_condition`) — `chat_node → tools → chat_node` when the model emits
-    tool calls, otherwise `chat_node → END`;
+  - with tools but **no** sensitive tools: the original `ToolNode` plus
+    `tools_condition` — `chat_node → tools → chat_node`, otherwise
+    `chat_node → END`;
+  - with tools and sensitive tools: `chat_node` routes to `approval` when any
+    call is sensitive, otherwise to `tools`; `approval` loops until no calls
+    remain, then returns to `chat_node`;
   - without tools: `chat_node → END` exactly as before.
 
   The result is the compiled graph used by `ChatService`. The default recursion
-  limit bounds tool loops.
+  limit bounds tool and approval loops.
 
 Adding a node later (router, memory) means adding it in `nodes.py` and the edge
 in `workflow.py`; no service or CLI code changes.
@@ -627,10 +685,11 @@ told never to claim a search it did not perform.
   available — signatures and return shapes can stay the same.
 - `registry.py` — `STATIC_TOOLS` (31 repository-free tools; `web_search` is
   currently disabled) plus
-  `get_tools(notes_repository, document_service=None)`, which appends the four
-  note tools and, when a document service is supplied, the two retrieval tools
-  for a total of 37. `container.py` passes the result to both `create_llm` and
-  `build_chatbot`.
+  `get_tools(notes_repository, document_service=None, inventory_service=None)`,
+  which appends the four note tools, the two retrieval tools when a document
+  service is supplied, and the 54 inventory tools when an inventory service is
+  supplied. A fully wired container exposes 91 tools. `container.py` passes the
+  result to both `create_llm` and `build_chatbot`.
 
 **Adding a tool** is additive:
 
@@ -650,12 +709,95 @@ the model can correct itself instead of the run failing.
 
 Tools that need shared state (notes, documents) are built by a
 `create_*_tools()` factory that closes over its dependency, and
-`get_tools(notes_repository, document_service)` includes them. This keeps tools
-dependent only on their repository/service rather than on global state.
+`get_tools(notes_repository, document_service, inventory_service)` includes them.
+This keeps tools dependent only on their repository/service rather than on global
+state.
 
 Mock tools are intentionally honest: JSON responses include `"mock": true`, no
 network calls are made, and the modeled state (calendar) lives in module memory
 for the process lifetime. Notes are the exception: they are durable SQLite rows.
+
+### `inventory/`
+
+An additive ERP-style domain backed by one JSON document (no ORM, no new
+database). It exists to practise tool calling and HITL, so it prioritises clear
+workflows over generic CRUD.
+
+- `data_access.py` — `InventoryStore`:
+  - loads and validates the JSON on construction;
+  - reads return deep copies, so callers cannot mutate the cache;
+  - `transaction()` holds an `RLock`, reloads the file, yields a mutable copy,
+    validates the whole dataset, then writes atomically with a temporary file,
+    `fsync`, and `os.replace`;
+  - `next_id(...)` scans existing IDs so generated IDs cannot collide;
+  - missing files raise `InventoryDataNotFoundError` (the container logs and runs
+    without inventory tools); invalid JSON or invalid data raises, never repairs.
+- `validation.py` — `validate_dataset(data) -> ValidationReport`:
+  - required metadata/collections, unique IDs and SKUs, every foreign key;
+  - category and manager cycles;
+  - sale line arithmetic, invoice balance identities, payment sums, PO totals,
+    posted-journal balance, customer outstanding balances;
+  - `quantity_reserved <= quantity_on_hand`, non-negative availability;
+  - approval resources resolve to existing records.
+- `service.py` — `InventoryService`, the business layer:
+  - catalogue, stock, parties, sales, invoices, payments, procurement, finance,
+    returns, approvals;
+  - mutations validate references, quantities, prices, status transitions, and
+    credit limits before writing;
+  - sensitive methods accept `operation_id`; the mutation and its
+    `operation_log` record commit in the same transaction, making an interrupted
+    approval safe to resume without duplicate effects;
+  - the newest `operation_log_limit` operations and `audit_log_limit` audit rows
+    are retained; older rows are dropped;
+  - `preview_operation(tool, args)` builds the read-only current/proposed values
+    for the approval panel (including discount projections for `update_sale`);
+  - `record_hitl_decision(..., actor_id=...)` appends an audit record for a human
+    decision, mapping the configured operator to an employee or falling back to
+    `HUMAN_OPERATOR`;
+  - `describe_employee(id)` returns the reviewer label shown in the panel and by
+    `/approvals`.
+- `approvals.py` — `SENSITIVE_TOOLS`, the single policy table mapping 15 tool
+  names to human-facing action titles.
+- `tools/` — 54 `@tool` wrappers grouped by area: `catalog`, `stock`, `parties`,
+  `sales`, `procurement`, `finance`, `workflows`. Each wrapper is thin: parse
+  arguments, call the service, return JSON or `"Error: ..."`. Tools never read or
+  write the JSON file directly. Sensitive wrappers declare an injected
+  `config: RunnableConfig` and read `inventory_operation_id`.
+- `README.md` — dataset relationships, business rules, and tool inventory.
+
+The demo dataset lives at `inventory-data/inventory/inventory_data.json`, with a
+pristine `inventory_data.seed.json` beside it. See
+[`inventory-data/README.md`](./inventory-data/README.md).
+
+### `graph/approval.py`
+
+The HITL node. It is generic: it receives sensitive-tool titles plus optional
+`preview` and `record` callbacks, so the graph layer never imports `inventory`.
+
+- `pending_tool_calls(messages)` — finds tool calls in the newest AI message that
+  have no matching `ToolMessage` yet.
+- `route_after_chat` — sends a message to `approval` when **any** of its calls is
+  sensitive, otherwise to `tools`, or to `END` when there are no calls.
+- `route_after_approval` — loops back to `approval` while calls remain, then to
+  `chat_node`.
+- `create_approval_node(...)`:
+  - executes non-sensitive calls directly (for mixed messages);
+  - for a sensitive call, builds the payload, calls `interrupt(payload)`, then
+    applies the decision;
+  - the payload carries `editable_fields` and `field_types` from the tool schema
+    so the CLI can edit arguments field by field with type coercion;
+  - approve → invoke with the original arguments;
+  - edit → filter edited keys to the tool schema and invoke;
+  - reject → return a rejection `ToolMessage` without invoking;
+  - compares the decision's `approval_token` with the recomputed token and
+    refuses stale proposals;
+  - passes `operation_id` through `RunnableConfig` for idempotency;
+  - calls the audit callback after the decision, with the configured reviewer
+    mapped to an employee by the service.
+
+A checkpointed `interrupt()` is what makes the approval survive a restart. See
+[`HITL.md`](./HITL.md) for the full flow, decision types, and
+limitations.
 
 ### `cli/`
 
@@ -665,11 +807,12 @@ polished terminal experience, and nothing else.
 | Module        | Responsibility |
 | ------------- | -------------- |
 | `registry.py` | `Command` and `Completion` dataclasses, `normalize`, `resolve`, `grouped`, `suggest` (prefix, then fuzzy), `similar_commands` (difflib), `split_input`. No I/O, no rendering, no service imports — pure and directly unit-tested. |
-| `commands.py` | `COMMANDS: list[Command]` — the single source of truth — plus every handler and `dispatch(session, text) -> bool`. `dispatch` returns `False` for non-slash input so the caller forwards it to the LLM, and `True` when it handled the input (including reporting an unknown command, which is never forwarded). |
+| `commands.py` | `COMMANDS: list[Command]` — the single source of truth — plus every handler and `dispatch(session, text) -> bool`. `dispatch` returns `False` for non-slash input so the caller forwards it to the LLM, and `True` when it handled the input (including reporting an unknown command, which is never forwarded). `/approvals` is the read-only handler that lists live interrupts and seeded approvals. |
 | `theme.py` | The design system: the emerald palette (brand, type ramp, status colours), background/surface colours, the resolved `Palette` with named style roles, and the shared `RICH_THEME`. Every colour lives here; no component hardcodes one. |
 | `background.py` | The emerald grid + neural-node decoration: `grid_lines` (a sparse lattice with occasional emerald nodes), `stamp_center`/`banner` (overlay a clean, centred lockup over the grid), and `grid_unicode_ok` for the Unicode→ASCII fallback. Static text — no animation, no per-token redraw cost. |
-| `console.py` | Rich rendering in the emerald-grid design: the framed welcome hero (`show_welcome` — grid backdrop, brand lockup, live status bullets, quick-start shortcuts), `show_status_banner`, `show_help`, `show_command_help`, `show_threads`, `show_history`, `user_message` (`YOU`), `assistant_header` (`BAYAZID AI`), `stream_token`, `markdown_block`, `tool_call` (`● Executing tool: …`), `tool_result` (`✓ Completed · 0.3s` / `✗ Failed`), `error`, `notice`/`success`/`warning`, and the `StatusSnapshot` record. All layout lives here; colours come from `theme.py`. |
-| `chat.py` | `process_message` maps `TurnEvent`s to renderer calls and measures real tool elapsed time; `build_status` collects display-safe runtime facts. The `_Response` buffer decides between live streaming and Markdown rendering and closes a streamed line before tool activity. |
+| `console.py` | Rich rendering in the emerald-grid design: the framed welcome hero (`show_welcome` — grid backdrop, brand lockup, live status bullets, quick-start shortcuts), `show_status_banner`, `show_help`, `show_command_help`, `show_threads`, `show_history`, `show_approvals`, `user_message` (`YOU`), `assistant_header` (`BAYAZID AI`), `stream_token`, `markdown_block`, `tool_call` (`● Executing tool: …`), `tool_result` (`✓ Completed · 0.3s` / `✗ Failed`), `approval_panel` (`HUMAN APPROVAL REQUIRED`), `approval_fields`, `approval_diff`, `error`, `notice`/`success`/`warning`, and the `StatusSnapshot` record. All layout lives here; colours come from `theme.py`. |
+| `approval.py` | Human approval interaction: renders the panel, collects approve/edit/reject, and provides field-level editing. It lists schema fields with current values, coerces input to the declared type, shows only changed values, and asks for confirmation before returning an `edit` decision. Every prompt terminates its line; cancelling returns to the decision menu without resuming. |
+| `chat.py` | `process_message` maps `TurnEvent`s to renderer calls, measures real tool elapsed time, and drives the interrupt/resume loop. It prints `Approval recorded. Continuing…` or `Returning to chat…` so the main prompt is restored; `resume_pending` offers an approval restored from a checkpoint at startup; `build_status` collects display-safe runtime facts. The `_Response` buffer decides between live streaming and Markdown rendering and closes a streamed line before tool activity. |
 | `session.py` | `ChatSession` — mutable per-run state: container, console, `current_thread_id`, `running`, and an injectable `ask` used by handlers that need an argument. Exposes `thread_service`/`chat_service`/`settings` convenience properties and `process()`. |
 | `input.py` | `CommandCompleter` (command names, then per-command argument completions), `framed_message` (the width-adaptive top-rule + left-rail composer), `build_prompt_session` (framed message + `bottom_toolbar` status bar), `read_input`, `make_ask`, and `PlainPrompt` for terminals where prompt_toolkit cannot attach. |
 | `picker.py` | Interactive `/threads` session picker: a prompt_toolkit `Application` with a search buffer and a live table (recency, message count, active marker). `relative_time`, `build_rows`, `filter_rows` are pure; `pick` runs the application and returns the chosen thread, falling back to the static list off a TTY. |
@@ -805,6 +948,50 @@ Stream:  messages mode  → chat_node answer tokens
 ```
 
 LangGraph's default `recursion_limit` (25) caps the number of round trips.
+
+### Human approval loop (sensitive tools)
+
+```text
+chat_node (tool-bound LLM)
+      │
+      ├─ no tool_calls ──────────────────────────────────────► END
+      │
+      ├─ calls, none sensitive ──► tools (ToolNode) ─────────► chat_node
+      │
+      └─ calls, any sensitive
+             │
+             ▼
+        approval node
+             │
+             ├─ non-sensitive call in a mixed message → execute, emit ToolMessage
+             │
+             └─ sensitive call
+                    │
+                    ├─ preview_operation(tool, args)         (read-only)
+                    ├─ interrupt(payload) ──────────────────► checkpoint + stop
+                    │                                         │
+                    │        CLI: HUMAN APPROVAL REQUIRED    │
+                    │        [A] [E] [R]                      │
+                    │        [E] field editor -> edited args   │
+                    │        Command(resume=decision)         │
+                    ▼                                         ▼
+                 approve -> invoke(tool, args, operation_id)
+                 edit    -> invoke(tool, edited_args, operation_id)
+                 reject  -> ToolMessage("rejected"), no invoke
+                    │
+                    ▼
+             ToolMessage appended, audit record written
+                    │
+                    └── pending calls remain? ── yes ──► approval again
+                                        │
+                                        no
+                                        ▼
+                                     chat_node
+```
+
+The operation ID (`thread_id:tool_call_id`) travels through `RunnableConfig`; the
+service records the mutation and the operation log entry in one JSON
+transaction, so a resumed execution cannot apply the same business effect twice.
 
 ### Ingesting documents (RAG)
 
@@ -986,6 +1173,26 @@ The split is deliberate:
 Because all four share one connection, `delete_thread` removes checkpoints and
 metadata together while leaving notes and documents intact.
 
+### 7.5 Inventory dataset — owned by the inventory package, stored as JSON
+
+The ERP demo does **not** add tables to `chatbot_memory.db`. Its system of record
+is `INVENTORY_DATA_PATH` (default
+`inventory-data/inventory/inventory_data.json`):
+
+- One UTF-8 JSON document with `metadata` plus 22 entity collections.
+- `InventoryStore` validates the whole document on load and on every write.
+- Writes are read-modify-write under a process `RLock`, validated, then persisted
+  with a temporary file, `fsync`, and `os.replace`. A crash cannot leave a
+  partial JSON file.
+- `operation_log` rows provide idempotency for sensitive tool executions; they
+  commit in the same file replace as the business mutation.
+- A pristine `inventory_data.seed.json` is checked in for restoring the demo.
+
+This is deliberately not a database: it is inspectable, easy to reset, and keeps
+the learning focus on agent behaviour. The trade-off is a single writer and no
+cross-process transactions. See `inventory-data/README.md` and
+`HITL.md` for the details and limitations.
+
 ---
 
 ## 8. Lifecycle
@@ -1033,19 +1240,22 @@ Alternatively, `uv run python -m agentic_chatbot` enters through
 
 ## 9. Streaming contract
 
-`ChatService.stream_turn` emits a small, transport-neutral contract:
+`ChatService.stream_turn` and `resume_turn` emit a small, transport-neutral
+contract:
 
-| Event         | Fields                                  | Meaning                                      |
-| ------------- | --------------------------------------- | -------------------------------------------- |
-| `token`       | `content: str`                          | Incremental assistant text                   |
-| `tool_call`   | `name: str`, `content: str` (JSON args) | The model requested a tool                   |
-| `tool_result` | `name: str`, `content: str`             | Tool finished; content is its return value   |
-| `done`        | `title: str \| None`                    | Turn finished and persisted; title if new    |
+| Event         | Fields                                      | Meaning                                      |
+| ------------- | ------------------------------------------- | -------------------------------------------- |
+| `token`       | `content: str`                              | Incremental assistant text                   |
+| `tool_call`   | `name: str`, `content: str` (JSON args)     | The model requested a tool                   |
+| `tool_result` | `name: str`, `content: str`                 | Tool finished; content is its return value   |
+| `interrupt`   | `name="approval"`, `payload: dict`          | The graph paused for a human decision        |
+| `done`        | `title: str \| None`                        | Turn finished and persisted; title if new    |
 
 The CLI maps these to Rich output through `cli/chat.py`: `token` streams live (or
 buffers into a Markdown render), `tool_call`/`tool_result` become status lines,
-and `done` closes the message and may print a new title. A future SSE endpoint
-maps the same events to:
+`interrupt` renders the approval panel and resumes with a decision, and `done`
+closes the message and may print a new title. A future SSE endpoint maps the same
+events to:
 
 ```text
 event: token
@@ -1057,9 +1267,16 @@ data: {"name": "calculator", "content": "{\"expression\": \"2+2\"}"}
 event: tool_result
 data: {"name": "calculator", "content": "4"}
 
+event: interrupt
+data: {"tool": "update_product", "arguments": {"product_id": "PRD-1001",
+       "selling_price": 95000}, "approval_token": "..."}
+
 event: done
 data: {"title": "Simple Greetings"}
 ```
+
+An HTTP layer would need to return the interrupt payload to the client and accept
+the decision on a resume endpoint; the graph and services need no changes.
 
 Errors are **not** converted into events by the service; the caller decides
 (the CLI shows an inline error, an API would emit `event: error` and a 4xx/5xx as
@@ -1159,6 +1376,20 @@ where that change belongs.
   services; never duplicate SQL or graph logic there.
 - **More conversation metadata** — extend the `threads` schema and `Thread`
   dataclass, then update `ThreadRepository` and `ThreadService`.
+- **New inventory tool** — add a `@tool` in the matching `inventory/tools/*`
+  module, call a service method, and return JSON or `"Error: ..."`. Add the name
+  to `SENSITIVE_TOOLS` in `inventory/approvals.py` if it mutates business state.
+  `get_tools` and the graph pick it up automatically.
+- **Different approval policy** — change `SENSITIVE_TOOLS`. Read-only tools should
+  stay out of it; the graph routes by tool name only.
+- **Different inventory storage** — reimplement `InventoryStore`'s small surface
+  (`collection`, `find`, `get`, `search`, `transaction`, `next_id`). The service,
+  tools, and graph stay the same.
+- **Different demo dataset** — point `INVENTORY_DATA_PATH` at another valid JSON
+  document, or edit the seed and regenerate. Validation enforces the same
+  relationships.
+- **Different decision set** — extend the resume handler in `graph/approval.py`
+  and `cli/approval.py`. Keep the approval-token and operation-ID checks.
 
 ---
 
@@ -1186,9 +1417,10 @@ where that change belongs.
 9. **Mock calendar state is in-memory** — events created by
    `create_calendar_event` reset when the process exits. Notes are the exception:
    they are persisted in SQLite and survive restarts.
-10. **Every tool schema is sent to the model on every call** — 37 tools increase
-    prompt size and can slow tool selection. Trim `STATIC_TOOLS` (or gate tools
-    by config) if latency or cost matters.
+10. **Every tool schema is sent to the model on every call** — with inventory
+    enabled that is 91 tools, which increases prompt size and can slow tool
+    selection. Trim `STATIC_TOOLS`, disable the inventory service by removing the
+    dataset, or gate tool groups by config if latency or cost matters.
 11. **prompt_toolkit needs a terminal** — with piped input, CI, or a shell without
     a screen buffer it cannot attach. `build_prompt_session` then returns `None`
     and `PlainPrompt` (plain `input()`) takes over. Commands, dispatch, and
@@ -1227,6 +1459,27 @@ where that change belongs.
     outage, a corrupt FAISS index), the other still returns results and the
     failure is logged. Only when both fail does the tool report
     `Retrieval failed: ...`.
+19. **The inventory JSON store is single-writer** — the `RLock` serialises threads
+    inside one process, not multiple processes. Do not run two CLIs that mutate
+    the same dataset concurrently. `inventory_data.seed.json` is the reset point.
+20. **Approvals are bound, not authenticated** — the approval token detects a
+    stale or mismatched proposal. It is not a signature. `INVENTORY_OPERATOR_ID`
+    maps the reviewer to an employee for the audit trail, but it is a configured
+    identity, not a login; if the ID is unknown, the log falls back to
+    `HUMAN_OPERATOR`.
+21. **The audit write is a separate transaction** — the business mutation and its
+    `operation_log` entry commit together; the audit record is appended afterwards.
+    If that append fails, the operation has still happened and the failure is
+    logged.
+22. **Approved tools mutate the checked-in dataset** — normal use dirties
+    `inventory_data.json`. Restore from `inventory_data.seed.json` to reset the
+    demo. The application never writes the seed file.
+23. **Read-only tools are direct** — they execute without approval by design.
+    Only the 15 tools in `SENSITIVE_TOOLS` pause the graph.
+24. **Logs are capped** — `INVENTORY_OPERATION_LOG_LIMIT` and
+    `INVENTORY_AUDIT_LOG_LIMIT` keep the newest entries and drop older ones.
+    They are not archived to a second file. The operation ledger always keeps the
+    newest entry, so an in-flight idempotency check remains valid.
 
 ---
 
@@ -1269,6 +1522,13 @@ Run only the hybrid-retrieval tests:
 uv run pytest tests/test_rrf.py tests/test_bm25_store.py tests/test_hybrid_search.py -v
 ```
 
+Run only the inventory and HITL tests:
+
+```bash
+uv run pytest tests/test_inventory_dataset.py tests/test_inventory_service.py \
+  tests/test_inventory_tools.py tests/test_hitl.py tests/test_cli_approval.py -v
+```
+
 Tests use `tmp_path` SQLite databases plus fake graph, LLM, title, thread,
 checkpointer, and embeddings doubles (`tests/fakes.py`), so no OpenAI calls are
 made and the real `chatbot_memory.db` is never opened. FAISS runs against the
@@ -1307,6 +1567,22 @@ Presentation-specific tests:
 | `test_cli_rendering.py`          | background grid, framed input, and timed tool feedback |
 | `test_cli_picker.py`             | relative-time/filter/row data and the headless keyboard drive |
 
+Inventory and HITL tests:
+
+| File                             | Scope |
+| -------------------------------- | ----- |
+| `test_inventory_dataset.py`      | checked-in dataset validity, missing collection, duplicate IDs/SKUs, invalid FKs, financial and inventory consistency, journal balance, approval references, invalid JSON, atomic rollback, ID generation, concurrent transactions |
+| `test_inventory_service.py`      | catalogue CRUD, stock availability/low-stock, adjustments, transfers, sales and invoice arithmetic, payments and duplicate prevention, credit limits, PO lifecycle and receipt, returns, idempotency, operator mapping, log retention |
+| `test_inventory_tools.py`        | all 54 tool names, sensitive/read-only split, description intent, JSON results, error strings, injected operation IDs, previews |
+| `test_hitl.py`                   | interrupt before execution, approve, reject, edit, stale token, multiple approvals, discount approval, stock adjustment (approve/edit/reject), SQLite checkpoint restart, same thread ID, repeated resume, `ChatService` interrupt/resume |
+| `test_cli_approval.py`           | approval panel, A/E/R decisions, field-level editing and type coercion, invalid values, edit cancellation, no resume on cancel, startup resume |
+| `test_cli_commands.py`           | command table invariants plus `/approvals` live-interrupt and seeded-approval rendering |
+
+The conftest fixtures `inventory_data_path`, `inventory_store`, and
+`inventory_service` copy the dataset into `tmp_path`, so mutation tests never
+touch the checked-in working file. HITL restart tests use a temporary SQLite
+checkpointer file.
+
 The prompt integration tests drive prompt_toolkit through `create_pipe_input()`
 with a `DummyOutput`, waiting on buffer state rather than sleeping, so they are
 deterministic and need no terminal.
@@ -1327,6 +1603,25 @@ What's the weather in Dhaka?
 Convert 100 USD to EUR.
 Save a note titled "groceries" with milk and eggs.
 ```
+
+Inventory and HITL checks (each sensitive action should show the approval panel):
+
+```text
+How many Latitude Business Laptops are available?
+Which products are running low?
+Show all unpaid invoices.
+How much does customer CUS-004 owe?
+Increase the selling price of PRD-1001 to 95000.        # approve / edit / reject
+Delete product PRD-1005.                                # soft delete
+Reduce the stock of PRD-1001 by 3 units.
+Create a purchase order for 10 routers from SUP-003.
+Record a payment of BDT 20000 against invoice INV-2026-001.
+Approve return RET-2026-001.
+```
+
+To test restart preservation, trigger an approval, quit while the panel is
+waiting, and start the CLI again; the panel is offered for the restored thread.
+Restore the dataset from `inventory_data.seed.json` between demo runs.
 
 Expect a tool status line before the answer, Markdown structure preserved for
 structured responses, mock results marked with `"mock": true`, and RAG answers

@@ -2,6 +2,7 @@
 
 from langchain_core.tools import BaseTool
 
+from agentic_chatbot.inventory.service import InventoryService
 from agentic_chatbot.repository import NotesRepository
 from agentic_chatbot.services.document_service import DocumentService
 from agentic_chatbot.tools.builtin import calculator, get_current_time
@@ -83,11 +84,17 @@ STATIC_TOOLS: list[BaseTool] = [
 def get_tools(
     notes_repository: NotesRepository,
     document_service: DocumentService | None = None,
+    inventory_service: InventoryService | None = None,
 ) -> list[BaseTool]:
     """Return every tool, including repository-backed and retrieval tools."""
     tools = [*STATIC_TOOLS, *create_note_tools(notes_repository)]
 
     if document_service is not None:
         tools.extend(create_document_tools(document_service))
+
+    if inventory_service is not None:
+        from agentic_chatbot.inventory.tools import create_inventory_tools
+
+        tools.extend(create_inventory_tools(inventory_service))
 
     return tools

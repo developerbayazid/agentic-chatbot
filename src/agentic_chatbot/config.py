@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     rag_rrf_k: int = 60
     docs_path: str = "docs"
     rag_index_path: str = "data/faiss"
+
+    # Inventory demo dataset (JSON persistence, no ORM)
+    inventory_data_path: str = "inventory-data/inventory/inventory_data.json"
+    inventory_operator_id: str = "EMP-006"
+    inventory_operation_log_limit: int = 500
+    inventory_audit_log_limit: int = 1000
     rag_max_text_bytes: int = 2_000_000
     rag_max_pdf_bytes: int = 20_000_000
     rag_max_pdf_pages: int = 200

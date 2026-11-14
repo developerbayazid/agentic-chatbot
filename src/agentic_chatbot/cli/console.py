@@ -7,6 +7,7 @@ layout. No business logic lives here.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Iterable, Sequence
@@ -299,6 +300,184 @@ def tool_result(
 def _looks_like_failure(content: str) -> bool:
     head = content.strip().lower()
     return head.startswith("error") or head.startswith("failed")
+
+
+# --- human-in-the-loop -------------------------------------------------------
+
+
+def approval_panel(console: Console, payload: dict) -> None:
+    """Render one proposed sensitive action and the available decisions."""
+    body = Text()
+    body.append("Action: ", style=PALETTE.subtle)
+    body.append(str(payload.get("title") or payload.get("tool") or "Sensitive action"), style=PALETTE.strong)
+
+    rows = payload.get("details") or []
+    if not rows:
+        rows = [
+            [str(key).replace("_", " ").title(), value]
+            for key, value in (payload.get("arguments") or {}).items()
+        ]
+
+    if rows:
+        body.append("\n")
+
+    for label, value in rows:
+        body.append("\n")
+        body.append(f"{label}: ", style=PALETTE.subtle)
+        body.append(str(value), style=PALETTE.body)
+
+    body.append("\n\n")
+    body.append("Requested By: ", style=PALETTE.subtle)
+    body.append(str(payload.get("requested_by") or "AI Agent"), style=PALETTE.body)
+    body.append("\n")
+    body.append("Reason: ", style=PALETTE.subtle)
+    body.append(str(payload.get("reason") or "User requested this operation"), style=PALETTE.body)
+
+    warnings = payload.get("warnings") or []
+    for message in warnings:
+        body.append("\n")
+        body.append(f"! {message}", style=PALETTE.warn)
+
+    body.append("\n\n")
+    body.append("[A] Approve", style=PALETTE.ok)
+    body.append("    ")
+    body.append("[E] Edit Arguments", style=PALETTE.warn)
+    body.append("    ")
+    body.append("[R] Reject", style=PALETTE.danger)
+
+    console.print()
+    console.print(
+        Panel(
+            body,
+            title="HUMAN APPROVAL REQUIRED",
+            title_align="center",
+            box=box.ROUNDED,
+            border_style=PALETTE.warning,
+            padding=(0, 2),
+        )
+    )
+
+
+def approval_diff(console: Console, original: dict, edited: dict) -> None:
+    """Show only the arguments the human changed, original -> proposed."""
+    rows = []
+    for key in sorted(set(original) | set(edited)):
+        before = original.get(key)
+        after = edited.get(key)
+        if before != after:
+            rows.append((str(key), f"{before!r} -> {after!r}"))
+
+    if not rows:
+        notice(console, "No argument values changed.")
+        return
+
+    console.print()
+    console.print(Text("  Proposed argument changes", style=PALETTE.label))
+    for label, value in rows:
+        line = Text("    ")
+        line.append(f"{label}: ", style=PALETTE.subtle)
+        line.append(value, style=PALETTE.body)
+        console.print(line)
+
+
+def approval_fields(console: Console, fields: Sequence[str], values: dict) -> None:
+    """Numbered field list used by the field-level editor."""
+    console.print()
+    console.print(Text("  Editable arguments", style=PALETTE.label))
+
+    if not fields:
+        notice(console, "No editable fields were supplied for this action.")
+        return
+
+    for index, field in enumerate(fields, start=1):
+        line = Text("    ")
+        line.append(f"{index}. ", style=PALETTE.very_subtle)
+        line.append(f"{field} = ", style=PALETTE.subtle)
+        line.append(_display_value(values.get(field, "<not set>")), style=PALETTE.body)
+        console.print(line)
+
+
+def _display_value(value) -> str:
+    if value == "<not set>":
+        return value
+    if isinstance(value, str):
+        return f"'{value}'"
+    if isinstance(value, (list, dict)):
+        text = json.dumps(value, ensure_ascii=False)
+        return text if len(text) <= 60 else text[:59] + "\u2026"
+    return str(value)
+
+
+def show_approvals(
+    console: Console,
+    thread_id: str,
+    live: dict | None = None,
+    seeded: dict | None = None,
+    operator: str = "",
+) -> None:
+    """Read-only view of live graph interrupts and seeded business approvals."""
+    blank(console)
+    console.print(Text(" " * theme.GUTTER + "PENDING APPROVALS", style=PALETTE.label))
+    blank(console)
+
+    facts = [("THREAD", thread_id)]
+    if operator:
+        facts.append(("REVIEWER", operator))
+    _facts(console, facts)
+    blank(console)
+
+    console.print(Text("  LIVE GRAPH INTERRUPT", style=PALETTE.very_subtle))
+    value = (live or {}).get("value") or {}
+
+    if live and isinstance(value, dict):
+        rows = [
+            ("ACTION", value.get("title") or value.get("tool") or "approval"),
+            (
+                "OPERATION",
+                value.get("operation_id") or live.get("interrupt_id") or "-",
+            ),
+        ]
+        arguments = value.get("arguments") or {}
+        if arguments:
+            rows.append(
+                ("ARGUMENTS", json.dumps(arguments, ensure_ascii=False, default=str))
+            )
+        _facts(console, rows)
+    else:
+        notice(console, "No live interrupts for this thread.")
+
+    blank(console)
+
+    approvals = (seeded or {}).get("approvals") or []
+    console.print(
+        Text(
+            f"  SEEDED BUSINESS APPROVALS ({len(approvals)})",
+            style=PALETTE.very_subtle,
+        )
+    )
+
+    if not approvals:
+        notice(console, "No seeded business approvals are pending.")
+
+    for item in approvals:
+        line = Text("    ")
+        line.append(str(item.get("approval_id", "")), style=PALETTE.command)
+        line.append("   ")
+        line.append(str(item.get("action", "")), style=PALETTE.body)
+        line.append("   ")
+        line.append(str(item.get("resource_type", "")), style=PALETTE.subtle)
+        line.append(" ")
+        line.append(str(item.get("resource_id", "")), style=PALETTE.subtle)
+        console.print(line)
+
+    blank(console)
+    console.print(
+        Text(
+            "  Read-only. A decision panel appears the next time this thread continues.",
+            style=PALETTE.very_subtle,
+        )
+    )
+    blank(console)
 
 
 # --- notices -----------------------------------------------------------------

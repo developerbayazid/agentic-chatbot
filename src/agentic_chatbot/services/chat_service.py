@@ -7,6 +7,7 @@ from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING, Any
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from langgraph.types import Command
 
 from agentic_chatbot.models import TurnEvent
 
@@ -67,33 +68,7 @@ class ChatService:
             stream_mode=["messages", "updates"],
             version="v2",
         ):
-            if chunk["type"] == "messages":
-                message_chunk, metadata = chunk["data"]
-
-                node = metadata.get("langgraph_node")
-
-                if node not in (None, "chat_node"):
-                    continue
-
-                if isinstance(message_chunk.content, str) and message_chunk.content:
-                    yield TurnEvent(type="token", content=message_chunk.content)
-
-            elif chunk["type"] == "updates":
-                for node, update in chunk["data"].items():
-                    for message in (update or {}).get("messages", []):
-                        if node == "chat_node":
-                            for call in getattr(message, "tool_calls", None) or []:
-                                yield TurnEvent(
-                                    type="tool_call",
-                                    name=call["name"],
-                                    content=json.dumps(call.get("args", {})),
-                                )
-                        elif node == "tools":
-                            yield TurnEvent(
-                                type="tool_result",
-                                name=getattr(message, "name", None),
-                                content=str(message.content),
-                            )
+            yield from self._events_from_chunk(chunk)
 
         if is_first_message:
             title = self._title_service.generate_title(user_message)
@@ -103,3 +78,82 @@ class ChatService:
         else:
             self._thread_service.touch_thread(thread_id)
             yield TurnEvent(type="done")
+
+    def resume_turn(self, thread_id: str, decision: dict) -> Iterator[TurnEvent]:
+        """Continue a graph run that paused on an approval interrupt."""
+        config = self.get_config(thread_id)
+
+        for chunk in self._chatbot.stream(
+            Command(resume=decision),
+            config=config,
+            stream_mode=["messages", "updates"],
+            version="v2",
+        ):
+            yield from self._events_from_chunk(chunk)
+
+        self._thread_service.touch_thread(thread_id)
+        yield TurnEvent(type="done")
+
+    def get_pending_interrupt(self, thread_id: str) -> dict | None:
+        """Return the pending interrupt for a thread, or ``None``.
+
+        Reading graph state does not resume anything, so this is safe to call on
+        startup to restore a pending approval after a process restart.
+        """
+        try:
+            state = self._chatbot.get_state(self.get_config(thread_id))
+        except Exception:  # noqa: BLE001 - an unknown thread simply has no interrupt
+            return None
+
+        for task in getattr(state, "tasks", None) or ():
+            for item in getattr(task, "interrupts", None) or ():
+                return {
+                    "interrupt_id": getattr(item, "id", None),
+                    "value": getattr(item, "value", None),
+                }
+
+        return None
+
+    def _events_from_chunk(self, chunk: dict) -> Iterator[TurnEvent]:
+        if chunk["type"] == "messages":
+            message_chunk, metadata = chunk["data"]
+
+            node = metadata.get("langgraph_node")
+
+            if node not in (None, "chat_node"):
+                return
+
+            if isinstance(message_chunk.content, str) and message_chunk.content:
+                yield TurnEvent(type="token", content=message_chunk.content)
+
+        elif chunk["type"] == "updates":
+            data = chunk.get("data") or {}
+
+            interrupts = (
+                data.get("__interrupt__") if isinstance(data, dict) else None
+            )
+            for item in interrupts or ():
+                yield TurnEvent(
+                    type="interrupt",
+                    name="approval",
+                    payload=getattr(item, "value", None),
+                )
+
+            for node, update in data.items():
+                if node == "__interrupt__":
+                    continue
+
+                for message in (update or {}).get("messages", []):
+                    if node == "chat_node":
+                        for call in getattr(message, "tool_calls", None) or []:
+                            yield TurnEvent(
+                                type="tool_call",
+                                name=call["name"],
+                                content=json.dumps(call.get("args", {})),
+                            )
+                    elif node in {"tools", "approval"}:
+                        yield TurnEvent(
+                            type="tool_result",
+                            name=getattr(message, "name", None),
+                            content=str(message.content),
+                        )

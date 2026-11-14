@@ -272,6 +272,48 @@ def test_ask_strips_whitespace():
     assert ask("Title? ") == "spaced"
 
 
+def test_plain_prompt_accepts_a_plain_string(monkeypatch):
+    prompt = input_module.PlainPrompt()
+    monkeypatch.setattr("builtins.input", lambda text: "approved")
+
+    assert prompt.prompt("Decision? ") == "approved"
+
+
+def test_plain_prompt_still_accepts_formatted_fragments(monkeypatch):
+    prompt = input_module.PlainPrompt()
+    monkeypatch.setattr("builtins.input", lambda text: "yes")
+
+    assert prompt.prompt([("class:prompt", "Question? ")]) == "yes"
+
+
+def test_make_approval_ask_uses_a_plain_console_prompt(monkeypatch):
+    console = Console(record=True)
+    calls = []
+
+    def fake_input(prompt, **kwargs):
+        calls.append((prompt, kwargs))
+        return "a"
+
+    monkeypatch.setattr(console, "input", fake_input)
+
+    ask = input_module.make_approval_ask(console)
+
+    assert ask("Decision [A]pprove / [E]dit / [R]eject: ") == "a"
+    assert calls[0][0].startswith("  Decision")
+    assert calls[0][1]["markup"] is False
+
+
+def test_make_approval_ask_returns_empty_on_eof(monkeypatch):
+    console = Console(record=True)
+
+    def fake_input(prompt, **kwargs):
+        raise EOFError
+
+    monkeypatch.setattr(console, "input", fake_input)
+
+    assert input_module.make_approval_ask(console)("Decision: ") == ""
+
+
 def test_ask_offers_argument_completions():
     from agentic_chatbot.cli.registry import Completion
 

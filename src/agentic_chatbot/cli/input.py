@@ -18,6 +18,7 @@ from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.styles import Style
+from rich.console import Console
 
 from agentic_chatbot.cli import theme
 from agentic_chatbot.cli.glyphs import g, unicode_ok
@@ -198,7 +199,10 @@ class PlainPrompt:
     """Minimal prompt used when prompt_toolkit cannot attach to a terminal."""
 
     def prompt(self, message="", *args, **kwargs) -> str:
-        text = "".join(fragment[1] for fragment in message) if message else ""
+        if isinstance(message, str):
+            text = message
+        else:
+            text = "".join(fragment[1] for fragment in message) if message else ""
         try:
             return input(text.strip() or "\n> ")
         except (EOFError, KeyboardInterrupt):
@@ -223,6 +227,23 @@ def make_ask(prompt_session):
                 completer=_OneShotCompleter(list(completions)) if completions else None,
                 complete_while_typing=False,
             ).strip()
+        except (EOFError, KeyboardInterrupt):
+            return ""
+
+    return ask
+
+
+def make_approval_ask(console: Console):
+    """Line prompt for approval decisions, outside the framed composer.
+
+    Reusing the main ``PromptSession`` for nested approval questions can leave
+    the approval line on screen after the turn, so the main prompt looks stuck.
+    A separate Rich prompt keeps the composer state untouched.
+    """
+
+    def ask(question: str, completions: Sequence[Completion] = ()) -> str:
+        try:
+            return console.input(f"  {question}", markup=False).strip()
         except (EOFError, KeyboardInterrupt):
             return ""
 

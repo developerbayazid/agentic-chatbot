@@ -58,7 +58,8 @@ class DocumentHit:
 class TurnEvent:
     """A single event emitted while processing one conversation turn."""
 
-    type: Literal["token", "tool_call", "tool_result", "done"]
+    type: Literal["token", "tool_call", "tool_result", "interrupt", "done"]
     content: str = ""
     title: str | None = None
     name: str | None = None
+    payload: dict | None = None

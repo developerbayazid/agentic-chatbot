@@ -1305,6 +1305,9 @@ proposed — a lifespan builds the existing composition root, dependencies hand 
 services to routers, and routers are thin adapters — but it now exists. **No
 business logic was added to `api/`.**
 
+> Endpoint reference — paths, payloads, status codes, streaming contract, HITL
+> flow, troubleshooting: [`API.md`](./API.md).
+
 ```text
                     BAYAZID AI
                          │

@@ -6,8 +6,6 @@ returned to API consumers.
 
 from __future__ import annotations
 
-from pydantic import Field
-
 from agentic_chatbot.api.schemas.auth import StrictModel
 
 
@@ -30,9 +28,3 @@ class IngestResponse(StrictModel):
     chunks_created: int
     skipped: bool
     warning: str | None = None
-
-
-class DocumentSearchRequest(StrictModel):
-    query: str = Field(min_length=1, max_length=4_000)
-    namespace: str | None = Field(default=None, max_length=64)
-    k: int = Field(default=4, ge=1, le=10)

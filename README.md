@@ -317,6 +317,9 @@ The same services are also exposed over HTTP. The API is a second presentation
 layer: it calls the same `ChatService`, `ThreadService`, `DocumentService`, and
 compiled LangGraph the CLI drives, so nothing is duplicated.
 
+**Full endpoint reference, payloads, error codes, and troubleshooting:
+[`API.md`](./API.md).**
+
 ```bash
 # from the project root, so .env and data/ resolve
 uv run fastapi dev                         # FastAPI CLI, auto-reload (recommended)

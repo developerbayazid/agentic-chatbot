@@ -41,6 +41,16 @@ TOOL_GUIDANCE = (
     "uploaded or provided file or PDF, a handbook, or asks to search or "
     "summarize their documents. Leave namespace empty unless you know the exact "
     "ingest namespace.\n"
+    "- Treat personal identity and profile questions as document questions when "
+    "the indexed knowledge base may describe the user or the person named — for "
+    'example "Who is <name>?", "What does <name> do?", or questions about the '
+    "user's background, role, projects, or technologies. Call search_documents "
+    "before answering, even when the question does not mention documents.\n"
+    "- Never use web_search for private personal information or for questions "
+    "about the user; use search_documents instead.\n"
+    "- If several people share a name, rely on the retrieved evidence to tell "
+    "them apart. If no relevant document exists, say so or ask for clarification "
+    "instead of guessing.\n"
     "- Call search_notes or list_notes when the user refers to their saved, "
     "personal notes.\n"
     "- Call calculator for arithmetic instead of computing mentally.\n"
@@ -50,6 +60,27 @@ TOOL_GUIDANCE = (
     "matching tool was called. If a tool returns an error or no relevant "
     "information, say so plainly instead of guessing."
 )
+
+
+def _knowledge_catalog(document_service: DocumentService) -> str:
+    """Describe what is indexed so the model can judge when to retrieve."""
+    documents = document_service.list_documents()
+
+    if not documents:
+        return ""
+
+    lines = ["Indexed knowledge base (searchable with search_documents):"]
+
+    for document in documents[:20]:
+        lines.append(
+            f"- {document.title} — namespace {document.namespace} "
+            f"({document.source})"
+        )
+
+    if len(documents) > 20:
+        lines.append(f"- ...and {len(documents) - 20} more")
+
+    return "\n".join(lines)
 
 
 class ChatbotContainer:
@@ -106,6 +137,7 @@ class ChatbotContainer:
             self.thread_service,
             self.title_service,
             settings.system_prompt + TOOL_GUIDANCE,
+            context_provider=lambda: _knowledge_catalog(self.document_service),
         )
 
     def close(self) -> None:

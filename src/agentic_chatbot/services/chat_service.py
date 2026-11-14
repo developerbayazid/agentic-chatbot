@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING, Any
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
@@ -22,11 +22,25 @@ class ChatService:
         thread_service: ThreadService,
         title_service: TitleService,
         system_prompt: str,
+        context_provider: Callable[[], str] | None = None,
     ):
         self._chatbot = chatbot
         self._thread_service = thread_service
         self._title_service = title_service
         self._system_message = SystemMessage(content=system_prompt)
+        self._context_provider = context_provider
+
+    def _system_content(self) -> str:
+        """Return the system prompt plus any current knowledge-base context."""
+        if self._context_provider is None:
+            return self._system_message.content
+
+        context = self._context_provider().strip()
+
+        if not context:
+            return self._system_message.content
+
+        return f"{self._system_message.content}\n\n{context}"
 
     def get_config(self, thread_id: str) -> dict[str, Any]:
         return {"configurable": {"thread_id": thread_id}}
@@ -43,7 +57,7 @@ class ChatService:
         new_messages: list[BaseMessage] = []
 
         if is_first_message:
-            new_messages.append(self._system_message)
+            new_messages.append(SystemMessage(content=self._system_content()))
 
         new_messages.append(HumanMessage(content=user_message))
 

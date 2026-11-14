@@ -99,5 +99,4 @@ def test_registry_exposes_every_tool():
         "summarize_text",
         "track_package",
         "translate_text",
-        "web_search",
     }

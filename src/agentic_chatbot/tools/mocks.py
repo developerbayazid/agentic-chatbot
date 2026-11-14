@@ -46,6 +46,10 @@ def _to_json(payload: dict) -> str:
 def web_search(query: str, num_results: int = 5) -> str:
     """Search the web and return ranked results.
 
+    Use for public, general-purpose web lookups. Do not use it for the user's
+    private personal information or questions about the user; call
+    search_documents for their own documents instead.
+
     Mock implementation: results are simulated until a search API key is set.
     """
     count = max(1, min(num_results, 10))

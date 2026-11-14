@@ -54,6 +54,66 @@ def test_first_turn_sends_system_message_and_user_message():
     assert messages[1].content == "hi"
 
 
+def test_context_provider_enriches_the_first_turn_system_message():
+    chatbot = FakeChatbot()
+    calls = []
+
+    def context():
+        calls.append(True)
+        return "Indexed knowledge base:\n- profile"
+
+    service = ChatService(
+        chatbot,
+        FakeThreadService(),
+        FakeTitleService(),
+        "Be nice.",
+        context,
+    )
+
+    list(service.stream_turn("thread-1", "hi"))
+
+    messages = chatbot.last_inputs["messages"]
+    assert messages[0].content == (
+        "Be nice.\n\nIndexed knowledge base:\n- profile"
+    )
+    assert calls == [True]
+
+
+def test_context_provider_is_skipped_on_later_turns():
+    chatbot = FakeChatbot(messages=[HumanMessage(content="earlier")])
+    calls = []
+    service = ChatService(
+        chatbot,
+        FakeThreadService(),
+        FakeTitleService(),
+        "Be nice.",
+        lambda: calls.append(True) or "Indexed knowledge base",
+    )
+
+    list(service.stream_turn("thread-1", "again"))
+
+    assert calls == []
+    assert all(
+        not isinstance(message, SystemMessage)
+        for message in chatbot.last_inputs["messages"]
+    )
+
+
+def test_empty_context_does_not_change_the_system_message():
+    chatbot = FakeChatbot()
+    service = ChatService(
+        chatbot,
+        FakeThreadService(),
+        FakeTitleService(),
+        "Be nice.",
+        lambda: "   ",
+    )
+
+    list(service.stream_turn("thread-1", "hi"))
+
+    assert chatbot.last_inputs["messages"][0].content == "Be nice."
+
+
 def test_first_turn_uses_expected_stream_arguments():
     chatbot = FakeChatbot()
     service = build_service(chatbot)

@@ -21,11 +21,15 @@ def create_document_tools(service: DocumentService) -> list[BaseTool]:
 
         Call this when the user refers to their own documents, an uploaded or
         provided file or PDF, a handbook, or asks to search or summarize their
-        documents. Do not call it for general-knowledge questions. namespace
-        must be one of the values in the namespaces array returned by
-        list_documents, never a document title; leave it empty to search every
-        namespace. Cite the document title and source, and the page number for
-        PDF results.
+        documents. Also call it before answering questions about a specific
+        person, the user's background, role, projects, or technologies when the
+        documents may describe them — including "Who is <name>?" even when the
+        question does not mention documents. Do not call it for general
+        knowledge topics unrelated to the user's documents. Never use web_search
+        for private personal information. namespace must be one of the values in
+        the namespaces array returned by list_documents, never a document title;
+        leave it empty to search every namespace. Cite the document title and
+        source, and the page number for PDF results.
         """
         if not query.strip():
             return "Error: query is required."

@@ -8,6 +8,7 @@ from agentic_chatbot.services.chat_service import ChatService
 from agentic_chatbot.services.document_service import DocumentService
 from agentic_chatbot.services.thread_service import ThreadService
 from agentic_chatbot.services.title_service import TitleService
+from agentic_chatbot.tools.registry import STATIC_TOOLS
 from agentic_chatbot.vector_store import VectorIndexStore
 
 
@@ -41,11 +42,10 @@ def test_container_creates_schema_and_services(container):
     assert isinstance(container.document_service, DocumentService)
     assert container.vector_store.path_for("default").parent.is_dir()
     tool_names = {tool.name for tool in container.tools}
-    assert len(tool_names) == 38
+    assert len(tool_names) == len(STATIC_TOOLS) + 6
     assert {
         "calculator",
         "get_current_time",
-        "web_search",
         "calculate_loan_payment",
         "save_note",
         "search_documents",
@@ -72,6 +72,8 @@ def test_container_appends_tool_selection_guidance(container):
     assert TOOL_GUIDANCE in content
     assert "search_documents" in content
     assert "Never claim to have searched" in content
+    assert container.chat_service._context_provider is not None
+    assert container.chat_service._context_provider() == ""
 
 
 def test_close_closes_connection(settings):

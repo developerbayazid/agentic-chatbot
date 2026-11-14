@@ -237,7 +237,8 @@ class ChatbotContainer:
 7. Wire the repository and services. The chat service receives the system
    prompt plus `TOOL_GUIDANCE`, a short tool-selection policy (when to use
    documents, notes, and calculators, and how to report empty or failed tool
-   results).
+   results), and a context provider that lists indexed documents on the first
+   turn of a conversation.
 
 `build_container(settings=None)` is the public factory. The CLI uses it today; a
 FastAPI lifespan will use the same function later. Creating the graph once and
@@ -454,7 +455,11 @@ The heart of the conversation logic.
 - `stream_turn(thread_id, user_message)` → generator of `TurnEvent`:
   1. Read existing messages; detect whether this is the **first** turn.
   2. Build input messages: `[SystemMessage]` on the first turn, then
-     `HumanMessage(user_message)`.
+     `HumanMessage(user_message)`. The system content is the configured prompt
+     plus `TOOL_GUIDANCE` and, when supplied, the output of
+     `context_provider` — the current knowledge-base catalog of indexed
+     documents. The provider runs only while the thread has no history, so a
+     `/new` conversation sees documents ingested since startup.
   3. Call `chatbot.stream(..., stream_mode=["messages", "updates"], version="v2")`.
   4. For each `"messages"` chunk from `chat_node` whose content is a non-empty
      string, yield a `token` event. Chunks from other nodes (notably the `tools`
@@ -536,10 +541,11 @@ told never to claim a search it did not perform.
   `"mock": true`; calendar events live in memory for the process lifetime.
   Replace a tool body with a real client call when its credentials are
   available — signatures and return shapes can stay the same.
-- `registry.py` — `STATIC_TOOLS` (32 repository-free tools) plus
+- `registry.py` — `STATIC_TOOLS` (31 repository-free tools; `web_search` is
+  currently disabled) plus
   `get_tools(notes_repository, document_service=None)`, which appends the four
   note tools and, when a document service is supplied, the two retrieval tools
-  for a total of 38. `container.py` passes the result to both `create_llm` and
+  for a total of 37. `container.py` passes the result to both `create_llm` and
   `build_chatbot`.
 
 **Adding a tool** is additive:
@@ -1064,7 +1070,7 @@ where that change belongs.
 9. **Mock calendar state is in-memory** — events created by
    `create_calendar_event` reset when the process exits. Notes are the exception:
    they are persisted in SQLite and survive restarts.
-10. **Every tool schema is sent to the model on every call** — 38 tools increase
+10. **Every tool schema is sent to the model on every call** — 37 tools increase
     prompt size and can slow tool selection. Trim `STATIC_TOOLS` (or gate tools
     by config) if latency or cost matters.
 11. **prompt_toolkit needs a terminal** — with piped input, CI, or a shell without

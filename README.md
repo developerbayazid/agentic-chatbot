@@ -262,7 +262,7 @@ framed composer for input.
 
   ● MODEL    gpt-4o-mini       ● STORAGE  SQLite · connected
   ● GRAPH    ready             ● TRACING  on
-  ● TOOLS    38                ● SESSION  0367932
+  ● TOOLS    37                ● SESSION  0367932
 
   /help commands  ·  /threads conversations  ·  /new new conversation
 
@@ -517,9 +517,13 @@ Selection is intent-driven. The system prompt includes a tool-selection policy
 and each description states when it applies: general-knowledge questions are
 answered directly, while references to your documents, uploads, or saved notes
 require the matching tool. Empty results and tool errors are reported honestly
-instead of being guessed around.
+instead of being guessed around. On the first turn of each conversation the
+system prompt also lists the indexed documents, so personal identity and profile
+questions ("Who is Bayazid Hasan?") can trigger `search_documents` even without
+saying "my documents" — while unrelated general knowledge still answers
+directly.
 
-### Registered tools (38)
+### Registered tools (37)
 
 | Category            | Module         | Tools                                                                                                                                                                                                 |
 | ------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -528,7 +532,7 @@ instead of being guessed around.
 | Everyday life       | `life.py`      | `calculate_loan_payment`, `calculate_tip_split`, `calculate_bmi`, `calculate_age`, `days_between`, `convert_timezone`, `estimate_fuel_cost`                                                            |
 | Notes (per thread)  | `notes.py`     | `save_note`, `list_notes`, `search_notes`, `delete_note` — scoped to the active conversation                                                                                                           |
 | Retrieval (RAG)     | `documents.py` | `search_documents`, `list_documents` — cosine search over ingested text and PDFs, one FAISS index per namespace                                                                                        |
-| Mock API services   | `mocks.py`     | `web_search`, `fetch_url`, `get_news`, `get_weather`, `get_stock_price`, `convert_currency`, `send_email`, `send_slack_message`, `create_calendar_event`, `list_calendar_events`, `translate_text`, `find_recipe`, `get_holidays`, `track_package` |
+| Mock API services   | `mocks.py`     | `fetch_url`, `get_news`, `get_weather`, `get_stock_price`, `convert_currency`, `send_email`, `send_slack_message`, `create_calendar_event`, `list_calendar_events`, `translate_text`, `find_recipe`, `get_holidays`, `track_package` (`web_search` is defined but currently disabled) |
 
 All tools that need an external service (`mocks.py`) return simulated data and
 include `"mock": true` in their JSON. They make **no network calls** and need no
@@ -744,7 +748,7 @@ SQLite persistence all run through the service layer under
 `src/agentic_chatbot/`. The presentation layer is a `cli/` package: a centralised
 emerald design system (`theme.py`), an emerald-grid background renderer
 (`background.py`), a Rich renderer, a prompt_toolkit input layer, and one command
-table. Thirty-eight tools are registered in
+table. Thirty-seven tools are registered in
 `src/agentic_chatbot/tools/` — local utilities, retrieval over ingested text and
 PDFs, and mock implementations of common API-backed tools (weather, search,
 email, calendar, currency, …) that return `"mock": true` data until real

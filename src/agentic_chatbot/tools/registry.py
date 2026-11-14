@@ -29,7 +29,7 @@ from agentic_chatbot.tools.mocks import (
     send_slack_message,
     track_package,
     translate_text,
-    web_search,
+    # web_search,
 )
 from agentic_chatbot.tools.notes import create_note_tools
 from agentic_chatbot.tools.utilities import (
@@ -47,7 +47,7 @@ from agentic_chatbot.tools.utilities import (
 STATIC_TOOLS: list[BaseTool] = [
     calculator,
     get_current_time,
-    web_search,
+    # web_search,
     fetch_url,
     get_news,
     get_weather,

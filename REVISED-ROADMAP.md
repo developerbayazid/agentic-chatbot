@@ -302,7 +302,7 @@ plan, since they migrate the CLI's persistence too.
 | 2 — Chat navigation & performance | **done — verified** |
 | 3 — Slash commands & parity | **done — verified** |
 | 4 — Tools, activity, HITL | **done — verified** |
-| 5 — PostgreSQL foundation | not started (awaiting approval) |
+| 5 — PostgreSQL foundation | **done — verified** |
 | 6 — pgvector & hybrid search | not started |
 | 7 — Migration verification | not started |
 | 8 — Security/performance/reliability | not started |
@@ -417,6 +417,53 @@ Note on scope: my live check asked the real model for an approval-gated action
 and it answered without calling a tool, so the duplicate-decision path was proved
 against the backend's deterministic tests rather than a live model — the exact
 codes those tests assert are the ones the frontend now branches on.
+
+### Sprint 5 verification
+
+PostgreSQL 18.7 was already installed locally, so everything here ran against a
+real server rather than being written blind.
+
+| Check | Result |
+| --- | --- |
+| Backend switch | `DATABASE_BACKEND=sqlite\|postgres` + `POSTGRES_DSN`; SQLite remains the default |
+| Repository parity | 15 contract tests × 2 backends = **30 passed** (`test_storage_parity.py`) |
+| Container on Postgres | **5 passed** (`test_postgres_container.py`): real `PostgresSaver`, thread round trip, ingest→search, stats |
+| Owner isolation | re-proven on Postgres: Alice cannot retrieve Bob's chunk or vice versa |
+| Migration | 10 threads, 4 documents, 333 chunks, 2 meta rows, **236 checkpoints / 19 threads** |
+| Migration idempotency | second run copied 0 rows and left every count unchanged |
+| Timestamp parity | `created_at` identical to SQLite byte for byte |
+| SQLite regression | **710 passed, 20 skipped** — the 20 skips are the Postgres tests without a DSN |
+| ERP JSON | untouched (mtime predates this work; diff contains no new identifiers) |
+
+Design decisions worth recording:
+
+1. **One SQL dialect, one adapter.** Rather than duplicate ~500 lines of SQL,
+   `sql_backend.py` absorbs the three differences that actually exist: `?` →
+   `%s`, `lastrowid` → `RETURNING`, and `CURRENT_TIMESTAMP` → UTC. The query text
+   is written once and the services are unchanged.
+2. **`TIMESTAMP`, not `TIMESTAMPTZ`.** SQLite stores naive UTC text. A
+   `TIMESTAMPTZ` column reinterprets that text in the session's timezone, which
+   shifted every timestamp by the server's UTC offset. The parity tests caught
+   this; a plain `TIMESTAMP` round-trips exactly.
+3. **Autocommit stays off.** `PostgresSaver.setup()` issues `CREATE INDEX
+   CONCURRENTLY`, which Postgres refuses inside a transaction. Rather than make
+   the whole connection autocommit (which would silently disable `rollback()` and
+   break `replace_document` atomicity), autocommit is enabled only for the
+   duration of that one call.
+4. **Checkpoints migrate through the savers**, not by copying internal tables —
+   the serialised payload format is the checkpointer's business.
+
+Bugs found and fixed during the sprint:
+
+- `CREATE INDEX CONCURRENTLY cannot run inside a transaction block` — fixed with
+  the scoped-autocommit helper above.
+- **Timestamps shifted by the server's timezone** (found by asserting field
+  values, not just row counts).
+- `pending_writes` is `(task_id, channel, value)`, not `(channel, value)` — my
+  first unpack dropped every checkpoint with the wrong arity.
+- A broad `except` reported "0 checkpoints copied" without saying why. Failures
+  are now reported individually instead of being swallowed.
+
 
 
 

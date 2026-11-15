@@ -15,6 +15,11 @@ class Settings(BaseSettings):
 
     openai_api_key: str | None = None
     database_path: str = "chatbot_memory.db"
+
+    # Storage backend. "sqlite" is the default so an existing installation keeps
+    # working untouched; "postgres" requires POSTGRES_DSN.
+    database_backend: Literal["sqlite", "postgres"] = "sqlite"
+    postgres_dsn: str = ""
     llm_model: str = "gpt-4o-mini"
     llm_temperature: float = 0.0
     system_prompt: str = "You are a helpful AI assistant."

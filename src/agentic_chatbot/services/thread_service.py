@@ -8,14 +8,15 @@ from agentic_chatbot.models import Thread
 from agentic_chatbot.repository import ThreadRepository
 
 if TYPE_CHECKING:
-    from langgraph.checkpoint.sqlite import SqliteSaver
+    from langgraph.checkpoint.base import BaseCheckpointSaver
 
 
 class ThreadService:
     def __init__(
         self,
         repository: ThreadRepository,
-        checkpointer: SqliteSaver,
+        # Either SqliteSaver or PostgresSaver; both satisfy this protocol.
+        checkpointer: "BaseCheckpointSaver",
     ):
         self._repository = repository
         self._checkpointer = checkpointer

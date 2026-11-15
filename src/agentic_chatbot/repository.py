@@ -1,17 +1,26 @@
-"""SQLite repositories for thread metadata and notes.
+"""Repositories for thread metadata, notes, documents, and their chunks.
 
-All three repositories share one connection, one cursor, and one transaction,
-so they also share one lock (``database.connection_lock``). Holding a lock per
-repository would not protect anything: a commit in one thread would still
-commit another thread's open transaction.
+All repositories share one connection (and therefore one transaction), so they
+also share one lock. Holding a lock per repository would not protect anything: a
+commit in one thread would still commit another thread's open transaction.
+
+The SQL below is written once against :mod:`agentic_chatbot.sql_backend`, which
+adapts it to either SQLite or PostgreSQL. Only three constructs differ between
+the engines, and each is handled explicitly rather than abstracted away:
+
+* generated ids — ``execute(..., returning="row_id")``
+* timestamps — normalised back to ``"YYYY-MM-DD HH:MM:SS"``
+* placeholders — translated by the adapter
 """
 
-import sqlite3
 import uuid
 from collections.abc import Sequence
+from typing import Any
 
 from agentic_chatbot.database import connection_lock
 from agentic_chatbot.models import Chunk, Document, Note, Thread
+from agentic_chatbot.postgres import connection_lock as postgres_connection_lock
+from agentic_chatbot.sql_backend import sqlite_backend, wrap
 
 _SELECT_COLUMNS = "thread_id, title, owner_id, created_at, updated_at"
 _NOTE_COLUMNS = "note_id, thread_id, title, content, created_at"
@@ -21,7 +30,7 @@ _DOCUMENT_COLUMNS = (
 )
 
 
-def _to_thread(row: sqlite3.Row) -> Thread:
+def _to_thread(row: Any) -> Thread:
     return Thread(
         thread_id=row["thread_id"],
         title=row["title"],
@@ -31,12 +40,44 @@ def _to_thread(row: sqlite3.Row) -> Thread:
     )
 
 
-class ThreadRepository:
-    def __init__(self, connection: sqlite3.Connection):
-        self._connection = connection
-        self._cursor = connection.cursor()
-        self._lock = connection_lock(connection)
+def _to_note(row: Any) -> Note:
+    return Note(
+        note_id=row["note_id"],
+        thread_id=row["thread_id"],
+        title=row["title"],
+        content=row["content"],
+        created_at=row["created_at"],
+    )
 
+
+def _to_document(row: Any) -> Document:
+    return Document(
+        doc_id=row["doc_id"],
+        namespace=row["namespace"],
+        source=row["source"],
+        title=row["title"],
+        content_hash=row["content_hash"],
+        size_bytes=row["size_bytes"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        owner_id=row["owner_id"],
+    )
+
+
+class _Repository:
+    """Shared plumbing: one connection, one cursor, one lock."""
+
+    def __init__(self, connection: Any):
+        self._connection = wrap(connection)
+        self._cursor = self._connection.cursor()
+        self._lock = (
+            connection_lock(connection)
+            if sqlite_backend(connection)
+            else postgres_connection_lock(connection)
+        )
+
+
+class ThreadRepository(_Repository):
     def create(self, title: str = "New chat", owner_id: str | None = None) -> Thread:
         with self._lock:
             thread_id = str(uuid.uuid4())
@@ -46,7 +87,7 @@ class ThreadRepository:
                 (thread_id, title, owner_id),
             )
             self._connection.commit()
-            return self.get(thread_id)
+            return self.get(thread_id)  # type: ignore[return-value]
 
     def get(self, thread_id: str) -> Thread | None:
         with self._lock:
@@ -82,7 +123,7 @@ class ThreadRepository:
     def exists(self, thread_id: str) -> bool:
         with self._lock:
             row = self._cursor.execute(
-                "SELECT 1 FROM threads WHERE thread_id = ?",
+                "SELECT 1 AS present FROM threads WHERE thread_id = ?",
                 (thread_id,),
             ).fetchone()
             return row is not None
@@ -120,22 +161,7 @@ class ThreadRepository:
             self._connection.commit()
 
 
-def _to_note(row: sqlite3.Row) -> Note:
-    return Note(
-        note_id=row["note_id"],
-        thread_id=row["thread_id"],
-        title=row["title"],
-        content=row["content"],
-        created_at=row["created_at"],
-    )
-
-
-class NotesRepository:
-    def __init__(self, connection: sqlite3.Connection):
-        self._connection = connection
-        self._cursor = connection.cursor()
-        self._lock = connection_lock(connection)
-
+class NotesRepository(_Repository):
     def create(self, thread_id: str, title: str, content: str) -> Note:
         with self._lock:
             note_id = str(uuid.uuid4())
@@ -147,7 +173,7 @@ class NotesRepository:
                 (note_id, thread_id, title, content),
             )
             self._connection.commit()
-            return self.get(thread_id, note_id)
+            return self.get(thread_id, note_id)  # type: ignore[return-value]
 
     def get(self, thread_id: str, note_id: str) -> Note | None:
         with self._lock:
@@ -176,12 +202,15 @@ class NotesRepository:
 
     def search(self, thread_id: str, query: str) -> list[Note]:
         with self._lock:
-            pattern = f"%{query}%"
+            # `ILIKE` is Postgres-only and `LIKE` is case-insensitive in SQLite by
+            # default, so LOWER() on both sides is the one portable formulation.
+            pattern = f"%{query.lower()}%"
             rows = self._cursor.execute(
                 f"""
                 SELECT {_NOTE_COLUMNS}
                 FROM notes
-                WHERE thread_id = ? AND (title LIKE ? OR content LIKE ?)
+                WHERE thread_id = ?
+                  AND (LOWER(title) LIKE ? OR LOWER(content) LIKE ?)
                 ORDER BY created_at ASC, note_id ASC
                 """,
                 (thread_id, pattern, pattern),
@@ -198,31 +227,12 @@ class NotesRepository:
             return self._cursor.rowcount > 0
 
 
-def _to_document(row: sqlite3.Row) -> Document:
-    return Document(
-        doc_id=row["doc_id"],
-        namespace=row["namespace"],
-        source=row["source"],
-        title=row["title"],
-        content_hash=row["content_hash"],
-        size_bytes=row["size_bytes"],
-        created_at=row["created_at"],
-        updated_at=row["updated_at"],
-        owner_id=row["owner_id"],
-    )
-
-
-class DocumentsRepository:
+class DocumentsRepository(_Repository):
     """Owns every SQL statement for documents and their chunks.
 
     Vectors are not stored here; ``document_chunks.row_id`` is the id the FAISS
     index refers to.
     """
-
-    def __init__(self, connection: sqlite3.Connection):
-        self._connection = connection
-        self._cursor = connection.cursor()
-        self._lock = connection_lock(connection)
 
     def get(self, doc_id: str) -> Document | None:
         with self._lock:
@@ -232,9 +242,7 @@ class DocumentsRepository:
             ).fetchone()
             return _to_document(row) if row else None
 
-    def find_by_source(
-        self, namespace: str, source: str
-    ) -> Document | None:
+    def find_by_source(self, namespace: str, source: str) -> Document | None:
         with self._lock:
             row = self._cursor.execute(
                 f"""
@@ -292,7 +300,7 @@ class DocumentsRepository:
                     (owner_id,),
                 ).fetchall()
 
-            return [row[0] for row in rows]
+            return [row["namespace"] for row in rows]
 
     def authorized_chunk_ids(
         self, owner_id: str, namespaces: Sequence[str]
@@ -319,7 +327,7 @@ class DocumentsRepository:
                 (owner_id, *namespaces),
             ).fetchall()
 
-            return {int(row[0]) for row in rows}
+            return {int(row["row_id"]) for row in rows}
 
     def replace_document(
         self,
@@ -388,8 +396,9 @@ class DocumentsRepository:
                             chunk.page,
                             chunk.content,
                         ),
+                        returning="row_id",
                     )
-                    row_ids.append(int(self._cursor.lastrowid))
+                    row_ids.append(int(self._cursor.lastrowid or 0))
 
                 self._connection.commit()
             except Exception:
@@ -414,7 +423,7 @@ class DocumentsRepository:
                 """,
                 (doc_id,),
             ).fetchall()
-            return [int(row[0]) for row in rows]
+            return [int(row["row_id"]) for row in rows]
 
     def list_chunks(self, namespace: str) -> list[tuple[int, str]]:
         """Return ``(row_id, content)`` for every chunk in one namespace."""
@@ -428,7 +437,7 @@ class DocumentsRepository:
                 """,
                 (namespace,),
             ).fetchall()
-            return [(int(row[0]), row[1]) for row in rows]
+            return [(int(row["row_id"]), row["content"]) for row in rows]
 
     def chunks_fingerprint(self, namespace: str) -> tuple[int, int, int]:
         """Cheap signature of a namespace's chunks used to detect staleness.
@@ -440,17 +449,16 @@ class DocumentsRepository:
         with self._lock:
             row = self._cursor.execute(
                 """
-                SELECT COUNT(*), COALESCE(MAX(row_id), 0), COALESCE(SUM(row_id), 0)
+                SELECT COUNT(*) AS n, COALESCE(MAX(row_id), 0) AS hi,
+                       COALESCE(SUM(row_id), 0) AS total
                 FROM document_chunks
                 WHERE namespace = ?
                 """,
                 (namespace,),
             ).fetchone()
-            return (int(row[0]), int(row[1]), int(row[2]))
+            return (int(row["n"]), int(row["hi"]), int(row["total"]))
 
-    def chunks_by_ids(
-        self, row_ids: Sequence[int]
-    ) -> dict[int, sqlite3.Row]:
+    def chunks_by_ids(self, row_ids: Sequence[int]) -> dict[int, Any]:
         if not row_ids:
             return {}
 
@@ -487,14 +495,14 @@ class DocumentsRepository:
     def stats(self) -> dict[str, int]:
         with self._lock:
             documents = self._cursor.execute(
-                "SELECT COUNT(*) FROM documents"
-            ).fetchone()[0]
+                "SELECT COUNT(*) AS n FROM documents"
+            ).fetchone()["n"]
             chunks = self._cursor.execute(
-                "SELECT COUNT(*) FROM document_chunks"
-            ).fetchone()[0]
+                "SELECT COUNT(*) AS n FROM document_chunks"
+            ).fetchone()["n"]
             namespaces = self._cursor.execute(
-                "SELECT COUNT(DISTINCT namespace) FROM documents"
-            ).fetchone()[0]
+                "SELECT COUNT(DISTINCT namespace) AS n FROM documents"
+            ).fetchone()["n"]
 
             return {
                 "documents": int(documents),

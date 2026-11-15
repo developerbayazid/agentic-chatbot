@@ -2,7 +2,8 @@
 
 This document describes how the chatbot is structured **right now**: a
 single-process application with two interchangeable presentations — an interactive
-CLI and a REST API — built with LangChain, LangGraph, SQLite, and FAISS. The
+CLI and a REST API — built with LangChain, LangGraph, SQLite *or* PostgreSQL,
+and FAISS. The
 layout below keeps the HTTP layer a thin adapter: adding it was a wiring change,
 not a rewrite.
 
@@ -1083,6 +1084,31 @@ DocumentsRepository.chunks_by_ids → DocumentHits
 
 ## 7. Persistence model
 
+Relational data and conversation checkpoints live in **one store**, chosen by
+`DATABASE_BACKEND`:
+
+| Backend | Default | Adapter |
+| --- | --- | --- |
+| `sqlite` | yes | `database.py` (`sqlite3`) |
+| `postgres` | opt-in | `postgres.py` + `postgres_schema.py` (`psycopg`) |
+
+The repositories are written once against `sql_backend.py`, which absorbs the
+three differences that actually exist between the engines — `?` → `%s`
+placeholders, `lastrowid` → `RETURNING`, and `CURRENT_TIMESTAMP` → UTC — so no
+service knows which backend it has. `container.py` picks the connection and the
+matching checkpointer (`SqliteSaver` or `PostgresSaver`) in one place.
+
+Two consequences worth knowing:
+
+- The checkpointer is built on the **same connection** as the repositories, so
+  graph state and relational rows commit together. Both engines keep the single
+  connection/single lock design described in §13.
+- Postgres columns are `TIMESTAMP` *without* time zone, matching SQLite's naive
+  UTC semantics exactly. See `POSTGRES.md` for why, and for the migration script.
+
+The SQL below is the SQLite form; `postgres_schema.py` is the Postgres
+equivalent.
+
 One SQLite database (`DATABASE_PATH`) holds four independent concerns:
 
 ### 7.1 Thread metadata — owned by this project
@@ -1439,13 +1465,16 @@ Instead:
 - `SqliteSaver` has its own internal lock which does **not** compose with
   `connection_lock`. Two things keep that contained: every write commits inside
   its own method (no transaction spans calls), and turns are serialized per
-  thread. A connection pool or Postgres is the real fix.
+  thread.
 - `VectorIndexStore` and `BM25IndexStore` already lock; uploads additionally take
   a per-`(owner, namespace)` lock so duplicate uploads cannot race.
 
-**Run one uvicorn worker.** The shared connection, `SqliteSaver`, in-process
-FAISS/BM25 caches, and the single-writer inventory JSON all assume a single
-process.
+**Run one uvicorn worker — on either backend.** With Postgres the *database* can
+serve multiple processes, but the rest of the process does not: FAISS indexes,
+the BM25 corpus, and the single-writer inventory JSON are all in-process state,
+so two workers would each hold their own divergent view. Postgres removes the
+storage bottleneck, not this constraint. Lifting it means moving vectors into
+pgvector and the inventory into SQL (Sprint 6 onward).
 
 ### 10.7 Streaming
 

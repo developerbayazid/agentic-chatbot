@@ -8,7 +8,6 @@ services through dependency injection without touching business logic.
 from __future__ import annotations
 
 import logging
-import sqlite3
 import threading
 from pathlib import Path
 from typing import Any
@@ -129,20 +128,78 @@ def _knowledge_catalog(document_service: DocumentService) -> str:
     return "\n".join(lines)
 
 
+def _create_storage(settings: Settings) -> Any:
+    """Open the configured storage backend.
+
+    SQLite stays the default so an existing installation keeps working with no
+    configuration change; Postgres is opted into explicitly.
+    """
+    if settings.database_backend == "postgres":
+        from agentic_chatbot.postgres import create_connection as pg_connect
+
+        if not settings.postgres_dsn:
+            raise RuntimeError(
+                "DATABASE_BACKEND=postgres requires POSTGRES_DSN, for example "
+                "postgresql://user:password@127.0.0.1:5432/bayazid"
+            )
+
+        return pg_connect(settings.postgres_dsn)
+
+    return create_connection(settings.database_path)
+
+
+def _init_storage(connection: Any, settings: Settings) -> None:
+    if settings.database_backend == "postgres":
+        from agentic_chatbot.postgres import init_schema as pg_init
+
+        pg_init(connection, embedding_dimensions=settings.embedding_dimensions)
+        return
+
+    init_schema(connection, embedding_dimensions=settings.embedding_dimensions)
+
+
+def _create_checkpointer(connection: Any, settings: Settings) -> Any:
+    """Pick the checkpointer that matches the store.
+
+    Both implement the same ``LangGraph`` checkpointer protocol, so the graph and
+    every service above it are unaware of the difference.
+    """
+    if settings.database_backend == "postgres":
+        from langgraph.checkpoint.postgres import PostgresSaver
+
+        # `from_conn_string` opens its own connection, which would put graph
+        # state in a different transaction from the repositories. Constructing
+        # it directly keeps one connection, and therefore one lock and one
+        # transaction, exactly as the SQLite path does.
+        return PostgresSaver(connection)
+
+    return SqliteSaver(connection)
+
+
+def _setup_checkpointer(checkpointer: Any, connection: Any, settings: Settings) -> None:
+    """Create the checkpoint tables.
+
+    Postgres needs this outside a transaction because ``PostgresSaver.setup()``
+    issues ``CREATE INDEX CONCURRENTLY``; SQLite has no such restriction.
+    """
+    if settings.database_backend == "postgres":
+        from agentic_chatbot.postgres import run_outside_transaction
+
+        run_outside_transaction(connection, checkpointer.setup)
+        return
+
+    checkpointer.setup()
+
+
 class ChatbotContainer:
     def __init__(self, settings: Settings):
         self.settings = settings
 
-        self.connection: sqlite3.Connection = create_connection(
-            settings.database_path
-        )
-        init_schema(
-            self.connection,
-            embedding_dimensions=settings.embedding_dimensions,
-        )
+        self.connection = _create_storage(settings)
+        _init_storage(self.connection, settings)
 
-        self.checkpointer = SqliteSaver(self.connection)
-        self.checkpointer.setup()
+        self.checkpointer = _create_checkpointer(self.connection, settings)
+        _setup_checkpointer(self.checkpointer, self.connection, settings)
 
         self.notes_repository = NotesRepository(self.connection)
         self.embeddings = create_embeddings(settings)

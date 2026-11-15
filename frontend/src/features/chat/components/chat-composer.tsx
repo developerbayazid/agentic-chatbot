@@ -117,8 +117,12 @@ export function ChatComposer({
 
         <div
           className={cn(
-            "flex items-end gap-1.5 rounded-composer border border-border-strong bg-background",
-            "px-3 py-2.5 transition-colors focus-within:border-foreground/40",
+            // Fully rounded, like ChatGPT's composer. `rounded-full` with the
+            // generous horizontal padding keeps the pill shape even as the text
+            // grows; the textarea's own max-height caps how tall it gets.
+            "flex items-end gap-2 rounded-[1.75rem] border border-border-strong",
+            "bg-background py-2 pl-5 pr-2",
+            "transition-colors focus-within:border-foreground/40",
             disabled && "opacity-70",
           )}
         >
@@ -151,7 +155,7 @@ export function ChatComposer({
             <Button
               variant="secondary"
               size="icon"
-              className="size-8 rounded-lg"
+              className="size-9 shrink-0 rounded-full"
               aria-label="Stop generating"
               title="Stop generating"
               onClick={onStop}
@@ -161,7 +165,7 @@ export function ChatComposer({
           ) : (
             <Button
               size="icon"
-              className="size-8 rounded-lg"
+              className="size-9 shrink-0 rounded-full"
               aria-label="Send message"
               title="Send message"
               disabled={!value.trim() || disabled}

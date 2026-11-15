@@ -43,6 +43,17 @@ def _postgres():
     from agentic_chatbot.postgres import init_schema as pg_init
 
     connection = pg_connect(POSTGRES_DSN)
+
+    # Start from a clean slate *before* applying the schema, so a leftover
+    # `embedding_dimensions` row from another test file cannot make the dimension
+    # guard reject this run. Guarded because the table does not exist on a brand
+    # new database.
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT to_regclass('rag_meta') AS found")
+        if cursor.fetchone()["found"] is not None:
+            cursor.execute("DELETE FROM rag_meta WHERE key = 'embedding_dimensions'")
+    connection.commit()
+
     pg_init(connection)
 
     # Each run starts from empty tables so assertions on counts are meaningful.

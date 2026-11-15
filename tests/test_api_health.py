@@ -78,6 +78,48 @@ def test_readiness_exposes_no_paths_or_secrets(api_client, api_settings):
     assert "sqlite" not in text.replace("checks", "")
 
 
+def test_storage_check_accepts_a_store_without_filesystem_paths(api_client):
+    """The vector store must not be assumed to be FAISS.
+
+    ``PgVectorStore`` has no ``path_for`` at all, so a readiness check written
+    against the FAISS API reported ``storage: False`` on Postgres and made every
+    deployment look unready. Stores may expose a ``probe`` instead.
+    """
+    container = api_client.app.state.container
+
+    class RowStore:
+        def probe(self):
+            return True
+
+    original = container.vector_store
+    container.vector_store = RowStore()
+
+    try:
+        body = api_client.get("/health/ready").json()
+        assert body["checks"]["storage"] is True
+        assert body["status"] == "ready"
+    finally:
+        container.vector_store = original
+
+
+def test_storage_check_reports_an_unusable_store(api_client):
+    container = api_client.app.state.container
+
+    class BrokenStore:
+        def probe(self):
+            return False
+
+    original = container.vector_store
+    container.vector_store = BrokenStore()
+
+    try:
+        body = api_client.get("/health/ready").json()
+        assert body["checks"]["storage"] is False
+        assert body["status"] == "not_ready"
+    finally:
+        container.vector_store = original
+
+
 def test_readiness_fails_when_the_database_is_closed(api_client):
     container = api_client.app.state.container
     container.connection.close()

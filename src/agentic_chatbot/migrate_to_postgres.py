@@ -32,6 +32,7 @@ import argparse
 import sqlite3
 import sys
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Iterator
 
 TABLES = ("threads", "notes", "documents", "document_chunks", "rag_meta")
@@ -84,6 +85,7 @@ class Report:
     source_counts: dict[str, int] = field(default_factory=dict)
     target_counts: dict[str, int] = field(default_factory=dict)
     checkpoints: str = "skipped"
+    vectors: str = "skipped"
 
     @property
     def ok(self) -> bool:
@@ -122,6 +124,8 @@ def migrate(
     dsn: str,
     *,
     include_checkpoints: bool = False,
+    include_vectors: bool = False,
+    faiss_dir: str = "data/faiss",
     dry_run: bool = False,
 ) -> Report:
     from agentic_chatbot.postgres import create_connection, init_schema
@@ -160,6 +164,12 @@ def migrate(
         if include_checkpoints and not dry_run:
             report.checkpoints = _migrate_checkpoints(sqlite_path, dsn)
 
+        if include_vectors and not dry_run:
+            report.vectors = _migrate_vectors(sqlite_path, dsn, faiss_dir)
+
+        if not dry_run:
+            _reset_sequences(target)
+
         for table in TABLES:
             report.target_counts[table] = _count_sql(target, table)
     finally:
@@ -173,6 +183,122 @@ def _count_sql(connection: Any, table: str) -> int:
     with connection.cursor() as cursor:
         cursor.execute(f"SELECT COUNT(*) AS n FROM {table}")
         return int(cursor.fetchone()["n"])
+
+
+def _reset_sequences(target: Any) -> None:
+    """Advance BIGSERIAL sequences past the migrated ids.
+
+    ``document_chunks`` rows are copied with their explicit ``row_id``, which does
+    *not* advance the sequence. Without this, the next insert would reuse an id
+    that already exists and fail with a duplicate key. ``setval`` to the current
+    maximum - or to 1 when empty - makes subsequent inserts continue correctly.
+    """
+    with target.cursor() as cursor:
+        cursor.execute(
+            "SELECT setval(pg_get_serial_sequence('document_chunks', 'row_id'), "
+            "GREATEST(COALESCE(MAX(row_id), 0), 1), COALESCE(MAX(row_id), 0) > 0) "
+            "FROM document_chunks"
+        )
+    target.commit()
+
+
+def _migrate_vectors(sqlite_path: str, dsn: str, directory: str = "data/faiss") -> str:
+    """Copy FAISS embeddings into ``document_chunks.embedding``, keyed by row id.
+
+    Embeddings live in the FAISS files rather than in SQLite, so they are read
+    from those files and matched to rows by the id FAISS stored — which is the
+    chunk's ``row_id``. A namespace whose index file is missing is reported
+    rather than silently skipped; otherwise retrieval would quietly return
+    nothing for it after the switch.
+    """
+    from agentic_chatbot.postgres import create_connection
+
+    root = Path(directory)
+
+    if not root.exists():
+        return f"no FAISS directory at {root}"
+
+    target = create_connection(dsn)
+    copied = 0
+    missing: list[str] = []
+
+    try:
+        with target.cursor() as cursor:
+            cursor.execute("SELECT DISTINCT namespace FROM document_chunks")
+            namespaces = [row["namespace"] for row in cursor.fetchall()]
+
+        for namespace in namespaces:
+            indexed = _read_namespace_index(root, namespace)
+
+            if indexed is None:
+                missing.append(namespace)
+                continue
+
+            ids, vectors = indexed
+
+            with target.cursor() as cursor:
+                for row_id, vector in zip(ids, vectors):
+                    # `embedding IS NULL` makes this idempotent: a re-run leaves
+                    # already-migrated vectors untouched instead of rewriting
+                    # them, so the reported count reflects real work.
+                    cursor.execute(
+                        "UPDATE document_chunks SET embedding = %s "
+                        "WHERE row_id = %s AND embedding IS NULL",
+                        (_pg_array(vector), int(row_id)),
+                    )
+                    copied += cursor.rowcount
+
+            target.commit()
+
+        summary = f"{copied} chunk embeddings copied"
+
+        if missing:
+            summary += f"; no FAISS index for {len(missing)} namespace(s): "
+            summary += ", ".join(sorted(missing)[:3])
+
+        return summary
+    finally:
+        target.close()
+
+
+def _read_namespace_index(
+    root: Path, namespace: str
+) -> tuple[list[int], list[list[float]]] | None:
+    """Read one namespace's FAISS ids and vectors, or None when absent.
+
+    Vectors are read from the underlying ``IndexFlatIP`` storage via
+    ``rev_swig_ptr`` rather than ``reconstruct_n``. On this Windows build
+    ``reconstruct_n`` crashes the interpreter with a native stack-buffer error
+    (exit 0xC0000409) for ids stored through ``IndexIDMap2``, while the flat
+    index's own contiguous array is reliable. Both return the same data; this is
+    a workaround for the binding, not a change in what is migrated.
+    """
+    import faiss
+
+    from agentic_chatbot.vector_store import _filename
+
+    path = root / _filename(namespace)
+
+    if not path.exists():
+        return None
+
+    index = faiss.read_index(str(path))
+
+    if index.ntotal == 0:
+        return [], []
+
+    ids = faiss.vector_to_array(index.id_map)
+
+    # IndexIDMap2 wraps the index that actually stores the vectors.
+    inner = faiss.downcast_index(index.index)
+    raw = faiss.rev_swig_ptr(inner.get_xb(), inner.ntotal * inner.d)
+    matrix = raw.reshape(inner.ntotal, inner.d).copy()
+
+    return [int(value) for value in ids], matrix.tolist()
+
+
+def _pg_array(values: Any) -> str:
+    return "{" + ",".join(repr(float(value)) for value in values) + "}"
 
 
 def _migrate_checkpoints(sqlite_path: str, dsn: str) -> str:
@@ -302,6 +428,16 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Also copy LangGraph conversation state.",
     )
+    parser.add_argument(
+        "--vectors",
+        action="store_true",
+        help="Also copy FAISS embeddings into document_chunks.embedding.",
+    )
+    parser.add_argument(
+        "--faiss-dir",
+        default="data/faiss",
+        help="Where the FAISS indexes live (default: data/faiss).",
+    )
     parser.add_argument("--dry-run", action="store_true")
     arguments = parser.parse_args(argv)
 
@@ -309,6 +445,8 @@ def main(argv: list[str] | None = None) -> int:
         arguments.sqlite,
         arguments.dsn,
         include_checkpoints=arguments.checkpoints,
+        include_vectors=arguments.vectors,
+        faiss_dir=arguments.faiss_dir,
         dry_run=arguments.dry_run,
     )
 
@@ -322,6 +460,7 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     print(f"\ncheckpoints: {report.checkpoints}")
+    print(f"vectors    : {report.vectors}")
 
     if arguments.dry_run:
         print("\ndry run — nothing was written")

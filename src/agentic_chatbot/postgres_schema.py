@@ -63,9 +63,17 @@ CREATE TABLE IF NOT EXISTS document_chunks (
     chunk_index INTEGER NOT NULL,
     page        INTEGER,
     content     TEXT NOT NULL,
+    embedding   DOUBLE PRECISION[],
     created_at  TIMESTAMP NOT NULL DEFAULT (now() AT TIME ZONE 'UTC')
 )
 """
+
+# Added after the first release of this schema, so existing databases need the
+# column without recreating the table.
+DOCUMENT_CHUNKS_EMBEDDING = (
+    "ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS "
+    "embedding DOUBLE PRECISION[]"
+)
 
 RAG_META = """
 CREATE TABLE IF NOT EXISTS rag_meta (
@@ -86,4 +94,12 @@ INDEXES = (
     "ON documents (owner_id, namespace)",
 )
 
-ALL_STATEMENTS = (THREADS, NOTES, DOCUMENTS, DOCUMENT_CHUNKS, RAG_META, *INDEXES)
+ALL_STATEMENTS = (
+    THREADS,
+    NOTES,
+    DOCUMENTS,
+    DOCUMENT_CHUNKS,
+    DOCUMENT_CHUNKS_EMBEDDING,
+    RAG_META,
+    *INDEXES,
+)

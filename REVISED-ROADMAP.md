@@ -303,8 +303,8 @@ plan, since they migrate the CLI's persistence too.
 | 3 — Slash commands & parity | **done — verified** |
 | 4 — Tools, activity, HITL | **done — verified** |
 | 5 — PostgreSQL foundation | **done — verified** |
-| 6 — pgvector & hybrid search | not started |
-| 7 — Migration verification | not started |
+| 6 — pgvector & hybrid search | **done — with a documented deviation** (arrays, not pgvector; see below) |
+| 7 — Migration verification | **done** |
 | 8 — Security/performance/reliability | not started |
 | 9 — Final verification | not started |
 
@@ -463,6 +463,73 @@ Bugs found and fixed during the sprint:
   first unpack dropped every checkpoint with the wrong arity.
 - A broad `except` reported "0 checkpoints copied" without saying why. Failures
   are now reported individually instead of being swallowed.
+
+### Sprint 6 — vectors in Postgres
+
+The plan said `vector(1536)` with an HNSW index. **That was not possible on this
+machine**, so the deviation is recorded here rather than papered over:
+
+```
+CREATE EXTENSION vector  ->  ERROR: extension "vector" is not available
+```
+
+pgvector is not installed in PostgreSQL 18.7, and it cannot be built from source
+because there is no C toolchain (no `cl`, no `nmake`). I did not fake an index or
+claim one exists.
+
+What was built instead: `PgVectorStore`, storing embeddings in
+`document_chunks.embedding DOUBLE PRECISION[]`, with the **same interface** as
+`VectorIndexStore` (`add`, `replace`, `remove`, `search`, `stats`). So:
+
+- `DocumentService` is unchanged, and RRF fusion is untouched.
+- Owner filtering still happens before fusion, in the same query that scores.
+- Vectors are L2-normalised exactly as FAISS received them, so cosine scores are
+  directly comparable — proved by a test asserting 0.6 and 1.0 exactly.
+- **Cost:** search scans the namespace rather than an ANN index. Correct at this
+  corpus size, and the documented upgrade path (`POSTGRES.md`) is five mechanical
+  steps once pgvector is available.
+
+Bugs found and fixed:
+
+1. **`reconstruct_n` crashed the interpreter** (exit `0xC0000409`, a native
+   stack-buffer error) when reading vectors from `IndexIDMap2`. `read_index` and
+   `id_map` were fine; only reconstruction died. Fixed by reading the flat
+   index's contiguous array via `rev_swig_ptr`, which returns identical data.
+2. **Explicit `row_id` inserts did not advance the BIGSERIAL**, so the first
+   insert after migration would collide. `_reset_sequences` now advances it.
+3. **Vector migration was not idempotent** — the second run re-copied all 333.
+   `WHERE embedding IS NULL` fixes it: second run reports 0.
+4. **Test cross-contamination:** the 4-dimension vector tests left
+   `rag_meta.embedding_dimensions=4`, making every 1536-dimension test refuse to
+   start. Both sides now clean up.
+
+Verification:
+
+| Check | Result |
+| --- | --- |
+| Vector store tests | **7 passed** (ranking, exact cosine scores, namespace filtering, NULL-vector skipping, removal, dimension rejection, owner isolation) |
+| Full migration | rows + **236 checkpoints** + **333 embeddings**, retrieval self-similarity 1.000000 |
+| Migration idempotency | second run: 0 rows, 0 checkpoints, **0 vectors** |
+| Sequence | `max row_id=333`, `next row_id=334` — collision-free |
+| E2E on Postgres | ingest → hybrid search returns the document → chat turn → history 2 messages |
+| Full suite (Postgres on) | **737 passed** |
+| Full suite (SQLite only) | **710 passed, 27 skipped** |
+
+### Sprint 7 — migration verification
+
+Covered by the run above and by `test_storage_parity.py`: per-table counts,
+identical timestamps field by field, checkpoint replay across 19 threads,
+retrieval parity, sequence state, and owner isolation re-proven on Postgres.
+
+**ERP JSON is untouched** — verified by mtime (predates this work) and by the
+diff containing no identifiers introduced by it.
+
+### UI — fully rounded composer
+
+The chat input is now a full pill (`rounded-[1.75rem]`, circular send button),
+matching ChatGPT, rather than a fixed-radius box. Verified at lint 0, typecheck
+clean, 100 frontend tests, build exit 0.
+
 
 
 

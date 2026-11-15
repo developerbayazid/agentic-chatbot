@@ -1,63 +1,88 @@
 # PostgreSQL
 
-BAYAZID AI can store its relational data and conversation state in PostgreSQL
-instead of SQLite. **SQLite remains the default** — an existing installation
-keeps working with no configuration change.
-
-## Should you switch?
-
-| | SQLite (default) | PostgreSQL |
-| --- | --- | --- |
-| Setup | none | a server plus a DSN |
-| Concurrency | one writer; the app serializes through one connection | real concurrent writers |
-| Multiple app instances | **no** — single worker only | yes |
-| Usage | CLI, single-user demo | multi-user deployment |
-
-If you run one process and one operator, SQLite is fine. Switch when you need
-more than one app instance, or when concurrent writers matter.
+BAYAZID AI stores its relational data, conversation state, **and embeddings** in
+PostgreSQL. SQLite remains available (`DATABASE_BACKEND=sqlite`) for offline use
+and as the migration source, but Postgres is the default.
 
 ## Configuration
 
 ```bash
 DATABASE_BACKEND=postgres
-POSTGRES_DSN=postgresql://user:password@127.0.0.1:5432/bayazid
+POSTGRES_DSN=postgresql://postgres:postgres@127.0.0.1:5432/bayazid
 ```
 
-Anything else keeps using `DATABASE_PATH`. The schema is created automatically on
-first start; there is no separate migration step for a fresh database.
+The schema is created automatically on first start.
+
+## What moved
+
+| Concern | Before | Now (Postgres backend) |
+| --- | --- | --- |
+| Threads, notes, documents, chunks | SQLite | `threads`, `notes`, `documents`, `document_chunks` |
+| Conversation state | `SqliteSaver` | `PostgresSaver` |
+| Embeddings | FAISS files on disk | `document_chunks.embedding` |
+| BM25 corpus | rebuilt in memory from SQL rows | unchanged — still rebuilt in memory |
+| ERP demo data | JSON file | unchanged — deliberately still JSON |
+
+## Embeddings are arrays, not pgvector — and why
+
+`document_chunks.embedding` is `DOUBLE PRECISION[]`, not `vector(1536)`.
+
+**pgvector is not installed here**, and cannot be: `CREATE EXTENSION vector`
+returns *"extension is not available"*, and there is no C toolchain on this
+machine to build it from source. A `vector` column would simply not work, so the
+honest options were an array column or leaving retrieval on FAISS.
+
+What that buys and costs:
+
+- **Buys:** vectors live in the same rows, transaction, and backup as the chunks
+  they describe. No side-car files to drift or lose. Owner filtering happens in
+  the same query that scores, so a foreign chunk still cannot be returned or
+  reorder an authorised one.
+- **Costs:** search is a scan over the namespace's chunks rather than an indexed
+  approximate search. Fine for hundreds or low thousands of chunks; it will need
+  pgvector well before millions.
+
+Vectors are L2-normalised before storage, exactly as FAISS received them
+(`IndexFlatIP` on normalised vectors *is* cosine similarity), so scores from
+either backend are directly comparable and tests assert the equivalence.
+
+### Upgrading to pgvector later
+
+The interface is deliberately identical, so this is mechanical:
+
+1. Install pgvector, then `CREATE EXTENSION vector`.
+2. `ALTER TABLE document_chunks ADD COLUMN vec vector(1536)` and backfill from
+   `embedding` (already normalised).
+3. Add an HNSW index.
+4. Change `PgVectorStore.search`'s `ORDER BY` to `ORDER BY vec <=> %s::vector`.
+5. Swap the column name in `_write`.
+
+`DocumentService`, RRF fusion, and every caller stay untouched.
 
 ## Migrating an existing SQLite database
-
-The script reads SQLite and writes Postgres. It never modifies or deletes the
-SQLite file.
 
 ```bash
 uv run python -m agentic_chatbot.migrate_to_postgres \
     --sqlite chatbot_memory.db \
-    --dsn postgresql://user:password@127.0.0.1:5432/bayazid \
-    --checkpoints
+    --dsn postgresql://postgres:postgres@127.0.0.1:5432/bayazid \
+    --checkpoints \
+    --vectors
 ```
 
-- `--checkpoints` also copies conversation state through LangGraph's own savers,
-  so interrupted conversations stay resumable. Without it, threads and documents
-  move but conversation history does not.
+- `--checkpoints` copies conversation state through LangGraph's own savers.
+- `--vectors` copies FAISS embeddings into `document_chunks.embedding`. Without
+  it the rows move but search returns nothing, so it is worth passing.
+  `--faiss-dir` overrides the default `data/faiss`.
 - `--dry-run` reports what would be copied without writing.
-- **Idempotent.** Safe to re-run after a partial failure; rows are matched on
-  their primary key (`chunk_id` for chunks, since `row_id` comes from a
-  sequence). A second run copies 0 rows.
+- **Idempotent.** Rows match on their primary key, and vector writes skip rows
+  that already have an embedding, so a second run reports `0 copied`.
 - **Verified.** Row counts are compared per table and the command exits non-zero
-  if any table ends up with fewer rows in Postgres than in SQLite.
+  if any table ends up short.
 
-Recommended sequence:
-
-1. Stop the app.
-2. Back up the SQLite file (a copy is enough).
-3. `--dry-run` to see the expected counts.
-4. Run for real with `--checkpoints`.
-5. Run it again to confirm idempotency (it should copy 0 rows).
-6. Start the app with `DATABASE_BACKEND=postgres` and check `/health/ready`.
-7. Keep the SQLite file untouched until you are satisfied; switching back is just
-   removing `DATABASE_BACKEND`.
+Recommended sequence: stop the app, back up the SQLite file, `--dry-run`, run
+for real, run again to confirm idempotency, then start with
+`DATABASE_BACKEND=postgres` and check `/health/ready`. Keep the SQLite file until
+you are satisfied; switching back is just an environment change.
 
 ## Things that will surprise you
 

@@ -51,6 +51,10 @@ def settings(tmp_path) -> Settings:
     shutil.copyfile(INVENTORY_DATASET, inventory_copy)
 
     return Settings(
+        # Tests run on SQLite explicitly. Postgres is the application default,
+        # but the suite must not require a running server; the Postgres-specific
+        # tests opt in through TEST_POSTGRES_DSN.
+        database_backend="sqlite",
         database_path=str(tmp_path / "chatbot_memory.db"),
         rag_index_path=str(tmp_path / "faiss"),
         inventory_data_path=str(inventory_copy),

@@ -44,10 +44,28 @@ def _graph_ready(container) -> bool:
 
 
 def _storage_ready(container) -> bool:
+    """Whether the vector store is usable.
+
+    The two backends store vectors differently — FAISS writes a directory,
+    ``PgVectorStore`` writes rows — so this asks each for a cheap, side-effect-free
+    answer rather than assuming a filesystem path exists. Probe generators are
+    preferred; bulk ``stats()`` is not, because readiness must stay cheap.
+    """
+    store = getattr(container, "vector_store", None)
+
+    if store is None:
+        return False
+
     try:
-        directory = Path(container.vector_store.path_for("default")).parent
+        probe = getattr(store, "probe", None)
+
+        if callable(probe):
+            return bool(probe())
+
+        # FAISS: the index directory must exist and be writable.
+        directory = Path(store.path_for("default")).parent
         return directory.is_dir()
-    except Exception:  # noqa: BLE001 - a missing store is simply not ready
+    except Exception:  # noqa: BLE001 - an unusable store is simply not ready
         logger.debug("readiness: vector store check failed", exc_info=True)
         return False
 

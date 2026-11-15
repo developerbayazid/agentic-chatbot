@@ -191,6 +191,23 @@ def _setup_checkpointer(checkpointer: Any, connection: Any, settings: Settings) 
     checkpointer.setup()
 
 
+def _create_vector_store(connection: Any, settings: Settings) -> Any:
+    """Return the embedding store that matches the database backend.
+
+    Postgres keeps vectors in ``document_chunks`` so they travel with the rows
+    they belong to; SQLite keeps the per-namespace FAISS files as before.
+    """
+    if settings.database_backend == "postgres":
+        from agentic_chatbot.pg_vector_store import PgVectorStore
+
+        return PgVectorStore(connection, settings.embedding_dimensions)
+
+    return VectorIndexStore(
+        Path(settings.rag_index_path),
+        settings.embedding_dimensions,
+    )
+
+
 class ChatbotContainer:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -204,9 +221,8 @@ class ChatbotContainer:
         self.notes_repository = NotesRepository(self.connection)
         self.embeddings = create_embeddings(settings)
         self.documents_repository = DocumentsRepository(self.connection)
-        self.vector_store = VectorIndexStore(
-            Path(settings.rag_index_path),
-            settings.embedding_dimensions,
+        self.vector_store = _create_vector_store(
+            self.connection, settings
         )
         self.document_service = DocumentService(
             self.documents_repository,

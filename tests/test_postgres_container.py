@@ -31,12 +31,19 @@ INVENTORY_DATASET = (
 def _truncate(dsn: str) -> None:
     """Empty every application table so assertions on counts are meaningful.
 
-    The schema is applied first: on a fresh database the tables do not exist yet,
-    and creating them here keeps the helper usable on its own.
+    The dimension row is cleared too: another test file may have run with a
+    different embedding size, and the guard would otherwise refuse to start.
     """
     from agentic_chatbot.postgres import create_connection, init_schema
 
     connection = create_connection(dsn)
+
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT to_regclass('rag_meta') AS found")
+        if cursor.fetchone()["found"] is not None:
+            cursor.execute("DELETE FROM rag_meta WHERE key = 'embedding_dimensions'")
+    connection.commit()
+
     init_schema(connection)
 
     with connection.cursor() as cursor:

@@ -35,6 +35,12 @@ export function useThreadHistory(threadId: string | null) {
       request<ThreadHistoryResponse>(
         `/api/v1/threads/${encodeURIComponent(threadId as string)}/history`,
       ),
+    // A conversation's stored history does not change unless this client sends a
+    // turn, so it stays fresh long enough to make switching back instant.
+    staleTime: 5 * 60_000,
+    // Keep visited conversations cached for the session; evicting them would
+    // make switching back a full re-fetch.
+    gcTime: 30 * 60_000,
   });
 }
 

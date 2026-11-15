@@ -1,26 +1,27 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowUp, Square } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils/cn";
+import { CommandMenu } from "@/features/commands/components/command-menu";
+import type { CommandDefinition } from "@/features/commands/registry";
 
 /**
- * Claude-style composer: a large white surface with a thin border, rounded
- * corners, a subtle focus state, and the controls inside the field.
+ * Composer with a `/` command menu.
  *
- * Fully controlled: the parent owns the draft, so the welcome screen can seed an
- * example prompt and sending can clear it without mirroring the text twice.
- *
- * Enter sends, Shift+Enter inserts a newline, and the field grows with its
- * content up to a cap.
+ * The menu opens only while the draft is a single line beginning with `/`, so
+ * ordinary prose that happens to contain a slash never triggers it. While open,
+ * Up/Down/Enter/Escape belong to the menu, not the textarea.
  */
 export function ChatComposer({
   value,
   onChange,
   onSend,
   onStop,
+  onCommand,
+  filterCommands,
   streaming,
   disabled,
   placeholder = "How can I help you today?",
@@ -29,15 +30,21 @@ export function ChatComposer({
   onChange: (value: string) => void;
   onSend: (message: string) => void;
   onStop: () => void;
+  onCommand: (command: CommandDefinition) => void;
+  filterCommands: (query: string) => CommandDefinition[];
   streaming: boolean;
   disabled?: boolean;
   placeholder?: string;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  const isCommandDraft = /^\/\S*$/.test(value.trim()) || value.trim() === "/";
+  const matches = menuOpen && isCommandDraft ? filterCommands(value) : [];
 
   const resize = useCallback(() => {
     const element = textareaRef.current;
-
     if (!element) return;
 
     element.style.height = "auto";
@@ -46,22 +53,72 @@ export function ChatComposer({
 
   useEffect(resize, [resize, value]);
 
+  function choose(command: CommandDefinition) {
+    setMenuOpen(false);
+    setActiveIndex(0);
+    onCommand(command);
+    onChange("");
+  }
+
   function submit() {
     const message = value.trim();
-
     if (!message || streaming || disabled) return;
 
     onSend(message);
     onChange("");
+    setMenuOpen(false);
+  }
+
+  function onKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (menuOpen && matches.length > 0) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setActiveIndex((index) => (index + 1) % matches.length);
+        return;
+      }
+
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setActiveIndex((index) => (index - 1 + matches.length) % matches.length);
+        return;
+      }
+
+      if (event.key === "Enter") {
+        event.preventDefault();
+        choose(matches[Math.min(activeIndex, matches.length - 1)]);
+        return;
+      }
+
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMenuOpen(false);
+        return;
+      }
+    }
+
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      submit();
+    }
   }
 
   return (
     <div className="bg-background px-4 pb-4 pt-2">
       <div className="mx-auto w-full max-w-3xl">
+        {menuOpen && isCommandDraft && (
+          <CommandMenu
+            commands={matches}
+            activeIndex={activeIndex}
+            onSelect={choose}
+            onHover={setActiveIndex}
+            onClose={() => setMenuOpen(false)}
+          />
+        )}
+
         <div
           className={cn(
-            "flex items-end gap-1.5 rounded-composer border border-border bg-surface-raised",
-            "px-3 py-2.5 transition-colors focus-within:border-border-strong",
+            "flex items-end gap-1.5 rounded-composer border border-border-strong bg-background",
+            "px-3 py-2.5 transition-colors focus-within:border-foreground/40",
             disabled && "opacity-70",
           )}
         >
@@ -71,14 +128,19 @@ export function ChatComposer({
             rows={1}
             placeholder={placeholder}
             aria-label="Message"
+            aria-autocomplete="list"
+            aria-controls="slash-command-menu"
             disabled={disabled}
-            onChange={(event) => onChange(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                submit();
-              }
+            onChange={(event) => {
+              const next = event.target.value;
+              onChange(next);
+              // Open on a leading slash, close once it stops looking like one.
+              // The highlight resets here rather than in an effect, so typing
+              // never triggers a cascading render.
+              setMenuOpen(/^\/\S*$/.test(next.trim()) || next === "/");
+              setActiveIndex(0);
             }}
+            onKeyDown={onKeyDown}
             className={cn(
               "min-h-7 flex-1 resize-none bg-transparent px-0.5 py-1 text-[15px] leading-relaxed",
               "text-foreground outline-none placeholder:text-muted/80 disabled:opacity-60",
@@ -110,8 +172,9 @@ export function ChatComposer({
           )}
         </div>
 
-        <p className="mt-2 text-center text-[11.5px] text-muted/80">
-          BAYAZID AI can make mistakes. Sensitive actions require your approval.
+        <p className="mt-2 text-center text-[11px] text-muted">
+          Type <span className="font-mono">/</span> for commands · Enter to send ·
+          Shift+Enter for a new line
         </p>
       </div>
     </div>

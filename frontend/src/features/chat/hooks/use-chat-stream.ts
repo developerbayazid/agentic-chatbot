@@ -19,7 +19,11 @@ import type {
 import type { ToolActivity } from "@/features/chat/components/tool-activity";
 
 export interface StreamState {
-  status: "idle" | "streaming" | "awaiting_approval" | "completed" | "error";
+  /**
+   * `stopped` is distinct from `completed` on purpose: a turn the reader
+   * interrupted must not present itself as a finished answer.
+   */
+  status: "idle" | "streaming" | "awaiting_approval" | "completed" | "stopped" | "error";
   text: string;
   /** Keyed by `tool_call_id`, in first-seen order via the `order` array. */
   tools: ToolActivity[];
@@ -198,7 +202,9 @@ export function useChatStream() {
       previous.status === "streaming"
         ? {
             ...previous,
-            status: "completed",
+            // Not "completed": the answer was interrupted, and saying otherwise
+            // would present a truncated reply as a finished one.
+            status: "stopped",
             tools: previous.tools.map((tool) =>
               tool.status === "running" || tool.status === "pending"
                 ? {
@@ -280,7 +286,17 @@ export function useChatStream() {
         }
       } finally {
         abortRef.current = null;
+
+        // Targeted invalidation: the conversation list changes (titles, recency)
+        // and this one thread's stored history is now stale. Invalidating the
+        // whole `["threads"]` prefix would refetch every cached conversation.
         void queryClient.invalidateQueries({ queryKey: threadKeys.list });
+
+        if (resolvedThreadId) {
+          void queryClient.invalidateQueries({
+            queryKey: threadKeys.history(resolvedThreadId),
+          });
+        }
       }
 
       return resolvedThreadId;

@@ -37,6 +37,18 @@ export class ApiError extends Error {
     return this.status === 401;
   }
 
+  /**
+   * The approval is no longer actionable: already decided, superseded, or
+   * resolved by another client. The panel must stop offering the decision
+   * rather than retrying it — the server will keep refusing.
+   */
+  get isStaleApproval() {
+    return (
+      this.status === 409 &&
+      (this.code === "APPROVAL_STALE" || this.code === "APPROVAL_NOT_PENDING")
+    );
+  }
+
   static isApiError(error: unknown): error is ApiError {
     return error instanceof ApiError;
   }

@@ -16,6 +16,20 @@ describe("ApiError", () => {
     expect(new ApiError(401, "UNAUTHORIZED", "no").isUnauthorized).toBe(true);
     expect(new ApiError(500, "INTERNAL_ERROR", "no").isUnauthorized).toBe(false);
   });
+
+  it("recognises a no-longer-actionable approval", () => {
+    expect(new ApiError(409, "APPROVAL_STALE", "changed").isStaleApproval).toBe(true);
+    expect(
+      new ApiError(409, "APPROVAL_NOT_PENDING", "none").isStaleApproval,
+    ).toBe(true);
+  });
+
+  it("does not treat other conflicts as a stale approval", () => {
+    // A conflict from a different feature must not dismiss the approval panel.
+    expect(new ApiError(409, "THREAD_CONFLICT", "busy").isStaleApproval).toBe(false);
+    expect(new ApiError(500, "APPROVAL_STALE", "weird").isStaleApproval).toBe(false);
+    expect(new ApiError(404, "APPROVAL_NOT_FOUND", "gone").isStaleApproval).toBe(false);
+  });
 });
 
 describe("errorMessage", () => {

@@ -1,13 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import { Check, Copy } from "lucide-react";
 
 import { cn } from "@/lib/utils/cn";
 import { MarkdownMessage } from "@/components/shared/markdown-message";
 
+/**
+ * Message rows are memoised.
+ *
+ * A streaming turn re-renders its parent on every token; without `memo`, every
+ * restored message in a long conversation would be reconciled each time. The
+ * props are primitives, so the default shallow comparison is sufficient.
+ */
+
 /** User turns: plain text, right-aligned in a very light block. */
-export function UserMessage({ content }: { content: string }) {
+export const UserMessage = memo(function UserMessage({ content }: { content: string }) {
   return (
     <div className="flex justify-end">
       <div
@@ -20,13 +28,13 @@ export function UserMessage({ content }: { content: string }) {
       </div>
     </div>
   );
-}
+});
 
 /**
  * Assistant turns: no card. Typography and spacing carry the hierarchy, exactly
  * because the response is the main content of the page.
  */
-export function AssistantMessage({
+export const AssistantMessage = memo(function AssistantMessage({
   content,
   streaming = false,
 }: {
@@ -52,7 +60,7 @@ export function AssistantMessage({
       {streaming && (
         <span
           aria-hidden
-          className="ml-0.5 inline-block h-[1.05em] w-[2px] animate-pulse rounded-full bg-accent align-baseline"
+          className="ml-0.5 inline-block h-[1.05em] w-[2px] animate-pulse rounded-full bg-foreground/60 align-baseline"
         />
       )}
 
@@ -71,4 +79,9 @@ export function AssistantMessage({
       )}
     </div>
   );
-}
+});
+
+/** Historical tool output, shown as a quiet monospace line. */
+export const ToolLine = memo(function ToolLine({ content }: { content: string }) {
+  return <p className="font-mono text-[11.5px] text-muted">{content}</p>;
+});

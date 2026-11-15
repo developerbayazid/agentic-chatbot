@@ -5,7 +5,7 @@ import { AlertTriangle, ShieldCheck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { errorMessage } from "@/lib/api/errors";
+import { ApiError, errorMessage } from "@/lib/api/errors";
 import { useApprovalDetail, useDecideApproval } from "@/features/approvals/hooks/use-approvals";
 import type { ApprovalDetail, ApprovalSummary, Decision } from "@/types/api";
 
@@ -28,6 +28,7 @@ export function ApprovalPrompt({
   const [draft, setDraft] = useState<Record<string, unknown> | null>(null);
   const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [stale, setStale] = useState(false);
 
   const model: ApprovalDetail | ApprovalSummary = detail.data ?? approval;
   const editable = detail.data?.editable_fields ?? [];
@@ -49,8 +50,36 @@ export function ApprovalPrompt({
 
       onDecided();
     } catch (cause) {
+      // A 409 means this decision can never succeed — it was already resolved.
+      // Stop offering the buttons instead of inviting a retry that will fail.
+      if (ApiError.isApiError(cause) && cause.isStaleApproval) {
+        setStale(true);
+        onDecided();
+        return;
+      }
+
       setError(errorMessage(cause));
     }
+  }
+
+  if (stale) {
+    return (
+      <section
+        aria-label="Approval resolved"
+        className="rounded-card border border-border bg-surface p-4"
+      >
+        <header className="flex items-start gap-2">
+          <ShieldCheck className="mt-0.5 size-4 shrink-0 text-muted" />
+          <div className="min-w-0">
+            <h3 className="text-[14px] font-medium">This approval was already resolved</h3>
+            <p className="mt-1 text-[12.5px] leading-relaxed text-muted">
+              It was decided elsewhere, or it no longer matches the pending action.
+              Nothing was executed by this page.
+            </p>
+          </div>
+        </header>
+      </section>
+    );
   }
 
   return (

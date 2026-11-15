@@ -20,6 +20,7 @@ from agentic_chatbot.api.schemas.thread import (
     ThreadResponse,
     ThreadUpdateRequest,
 )
+from agentic_chatbot.api.schemas.tool import ToolInfo, ToolListResponse
 
 __all__ = [
     "ApprovalDetail",
@@ -38,4 +39,6 @@ __all__ = [
     "ThreadUpdateRequest",
     "TokenRequest",
     "TokenResponse",
+    "ToolInfo",
+    "ToolListResponse",
 ]

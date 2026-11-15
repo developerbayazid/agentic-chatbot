@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Search, SquarePen } from "lucide-react";
+import { Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { cn } from "@/lib/utils/cn";
@@ -11,10 +11,15 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useThreads } from "@/features/threads/hooks/use-threads";
 import { ThreadRowMenu } from "@/features/threads/components/thread-actions";
+import { groupThreads } from "@/features/threads/lib/group-threads";
 
 /**
- * Recent conversations. Compact text rows with a quiet context menu.
- * The backend has no search endpoint, so filtering is over the loaded list.
+ * Recents, grouped by date the way ChatGPT does it. Compact text rows with a
+ * hover-revealed context menu.
+ *
+ * The backend has no search endpoint, so filtering happens over the loaded list
+ * (documented in API.md). While a query is active the grouping flattens — a
+ * search result list gains nothing from date headers.
  */
 export function ThreadList() {
   const pathname = usePathname();
@@ -22,29 +27,60 @@ export function ThreadList() {
   const [searchOpen, setSearchOpen] = useState(false);
   const { data: threads, isLoading, isError, refetch } = useThreads();
 
+  const needle = query.trim().toLowerCase();
+
   const visible = useMemo(() => {
     if (!threads) return [];
-
-    const needle = query.trim().toLowerCase();
     return needle
-      ? threads.filter((t) => t.title.toLowerCase().includes(needle))
+      ? threads.filter((thread) => thread.title.toLowerCase().includes(needle))
       : threads;
-  }, [query, threads]);
+  }, [needle, threads]);
+
+  const grouped = useMemo(
+    () => (needle ? [] : groupThreads(visible)),
+    [needle, visible],
+  );
 
   const activeId = pathname.startsWith("/chat/")
     ? decodeURIComponent(pathname.slice("/chat/".length).split("/")[0] ?? "")
     : null;
 
+  function row(threadId: string, title: string) {
+    const active = threadId === activeId;
+
+    return (
+      <li key={threadId} className="group relative">
+        <Link
+          href={`/chat/${encodeURIComponent(threadId)}`}
+          className={cn(
+            "block truncate rounded-lg py-1.5 pl-2 pr-8 text-[13.5px] transition-colors",
+            active
+              ? "bg-surface-active text-foreground"
+              : "text-muted-strong hover:bg-surface-hover hover:text-foreground",
+          )}
+          title={title}
+        >
+          {title || "New chat"}
+        </Link>
+
+        {/* Quiet at rest; appears on hover or keyboard focus. */}
+        <div className="absolute inset-y-0 right-0.5 flex items-center opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+          <ThreadRowMenu threadId={threadId} title={title} />
+        </div>
+      </li>
+    );
+  }
+
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between px-2.5 pb-1 pt-1">
-        <span className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted">
-          Recents
+      <div className="flex items-center justify-between px-2.5 pb-1">
+        <span className="text-[10.5px] font-medium uppercase tracking-[0.07em] text-muted">
+          Chats
         </span>
         <Button
           variant="ghost"
           size="icon-sm"
-          aria-label="Search conversations"
+          aria-label="Search chats"
           aria-expanded={searchOpen}
           onClick={() => setSearchOpen((open) => !open)}
         >
@@ -59,8 +95,8 @@ export function ThreadList() {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search chats"
-            aria-label="Search conversations"
-            className="h-8 text-[13px]"
+            aria-label="Search chats"
+            className="h-8 rounded-lg text-[13px]"
           />
         </div>
       )}
@@ -78,7 +114,7 @@ export function ThreadList() {
           <p className="px-2 py-2 text-[12.5px] text-muted">
             Couldn&rsquo;t load chats.
             <button
-              className="ml-1 text-accent underline-offset-2 hover:underline"
+              className="ml-1 text-foreground underline underline-offset-2"
               onClick={() => void refetch()}
             >
               Retry
@@ -90,47 +126,25 @@ export function ThreadList() {
           <p className="px-2 py-3 text-[12.5px] leading-relaxed text-muted">
             {threads && threads.length > 0
               ? "No chat matches that search."
-              : "No chats yet. Start one below."}
+              : "No chats yet. Start one above."}
           </p>
         )}
 
-        <ul className="space-y-px">
-          {visible.map((thread) => {
-            const active = thread.thread_id === activeId;
+        {needle && visible.length > 0 && (
+          <ul className="space-y-px">{visible.map((t) => row(t.thread_id, t.title))}</ul>
+        )}
 
-            return (
-              <li key={thread.thread_id} className="group relative">
-                <Link
-                  href={`/chat/${encodeURIComponent(thread.thread_id)}`}
-                  className={cn(
-                    "block truncate rounded-md py-1.5 pl-2 pr-8 text-[13.5px] transition-colors",
-                    active
-                      ? "bg-surface-hover text-foreground"
-                      : "text-muted-strong hover:bg-surface-hover hover:text-foreground",
-                  )}
-                  title={thread.title}
-                >
-                  {thread.title || "New chat"}
-                </Link>
-
-                {/* Appears on hover/focus so the row stays quiet at rest. */}
-                <div className="absolute inset-y-0 right-0.5 flex items-center opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-                  <ThreadRowMenu threadId={thread.thread_id} title={thread.title} />
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-
-      <div className="px-2 pb-1">
-        <Link
-          href="/chat"
-          className="flex items-center gap-1.5 rounded-md px-1 py-1 text-[12.5px] text-muted transition-colors hover:text-foreground"
-        >
-          <SquarePen className="size-3.5" />
-          New chat
-        </Link>
+        {!needle &&
+          grouped.map(({ group, threads: bucket }) => (
+            <section key={group} aria-label={group}>
+              <h3 className="px-2 pb-1 pt-2 text-[10.5px] font-medium uppercase tracking-[0.07em] text-muted">
+                {group}
+              </h3>
+              <ul className="space-y-px">
+                {bucket.map((t) => row(t.thread_id, t.title))}
+              </ul>
+            </section>
+          ))}
       </div>
     </div>
   );

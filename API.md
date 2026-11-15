@@ -669,7 +669,51 @@ invalidates the namespace's BM25 cache, so search cannot return a deleted chunk.
 
 ---
 
-## 10. Error codes
+## 10. Tools
+
+### `GET /api/v1/tools`
+
+The catalog of tools the assistant can call. Read-only and deliberately narrow:
+names, categories, and whether each one requires approval. It exposes no
+arguments, prompts, or internals, and listing a tool is not permission to run it
+— execution still happens only inside a graph turn.
+
+```bash
+curl http://127.0.0.1:8000/api/v1/tools \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+```json
+{
+  "count": 91,
+  "tools": [
+    {
+      "name": "calculator",
+      "description": "Evaluate a basic arithmetic expression.",
+      "category": "Math",
+      "requires_approval": false
+    },
+    {
+      "name": "create_expense",
+      "description": "Record an expense against the demo inventory dataset.",
+      "category": "Inventory (demo)",
+      "requires_approval": true
+    }
+  ]
+}
+```
+
+`requires_approval` is read from the same policy set the graph enforces
+(`SENSITIVE_TOOLS`), so the flag cannot drift from the gate that actually blocks
+the call. Descriptions are the first line of the tool's own docstring, truncated
+to 300 characters.
+
+Categories: `Math`, `Utility`, `Web`, `Finance`, `Communication`, `Calendar`,
+`Text`, `Lifestyle`, `Notes`, `Documents`, `Inventory (demo)`.
+
+---
+
+## 11. Error codes
 
 | Code | Status | Meaning |
 | --- | --- | --- |
@@ -695,7 +739,7 @@ Stream-only codes, delivered as `error` frames: `STREAM_ERROR`, `THREAD_BUSY`.
 
 ---
 
-## 11. Complete curl walkthrough
+## 12. Complete curl walkthrough
 
 ```bash
 BASE=http://127.0.0.1:8000
@@ -739,7 +783,7 @@ curl -s -X DELETE $BASE/api/v1/threads/$THREAD -H "$AUTH" -o /dev/null -w '%{htt
 
 ---
 
-## 12. Configuration
+## 13. Configuration
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -775,7 +819,7 @@ secret is shorter than 32 characters.
 
 ---
 
-## 13. Deployment and concurrency limits
+## 14. Deployment and concurrency limits
 
 - **Run exactly one worker.** The app holds one SQLite connection, one
   `SqliteSaver`, in-process FAISS/BM25 caches, and the single-writer inventory
@@ -790,7 +834,7 @@ secret is shorter than 32 characters.
 
 ---
 
-## 14. Testing
+## 15. Testing
 
 ```bash
 uv run pytest                          # whole suite (no OpenAI calls)
@@ -805,7 +849,7 @@ and that no response ever contains an `approval_token`.
 
 ---
 
-## 15. Troubleshooting
+## 16. Troubleshooting
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |

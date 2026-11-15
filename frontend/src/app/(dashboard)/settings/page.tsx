@@ -1,15 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Monitor, Moon, Sun } from "lucide-react";
-import { useTheme } from "next-themes";
+import { Sun } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/features/auth/hooks/use-session";
 
-/** Frontend-only preferences plus read-only application information. */
+/** Read-only application information; the theme is fixed for now. */
 export default function SettingsPage() {
-  const { theme, setTheme } = useTheme();
   const { subject, logout } = useSession();
   const [health, setHealth] = useState<string>("checking…");
 
@@ -35,12 +33,6 @@ export default function SettingsPage() {
     };
   }, []);
 
-  const themes = [
-    { value: "light", label: "Light", icon: Sun },
-    { value: "dark", label: "Dark", icon: Moon },
-    { value: "system", label: "System", icon: Monitor },
-  ] as const;
-
   return (
     <div className="mx-auto w-full max-w-2xl px-5 py-8">
       <header>
@@ -53,22 +45,17 @@ export default function SettingsPage() {
 
       <section className="mt-7">
         <h2 className="text-[13px] font-medium text-foreground">Appearance</h2>
-        <p className="mt-1 text-[12.5px] text-muted">
-          Light is the primary experience; dark is available as a preference.
+        <p className="mt-1 text-[12.5px] leading-relaxed text-muted">
+          BAYAZID AI currently has a single, designed black-and-white theme. A
+          dark theme is planned but not implemented, so there is no switch to
+          offer yet.
         </p>
-        <div className="mt-2.5 flex gap-2">
-          {themes.map(({ value, label, icon: Icon }) => (
-            <Button
-              key={value}
-              size="sm"
-              variant={theme === value ? "default" : "secondary"}
-              onClick={() => setTheme(value)}
-              aria-pressed={theme === value}
-            >
-              <Icon />
-              {label}
-            </Button>
-          ))}
+        <div className="mt-2.5 flex items-center gap-2 text-[12.5px] text-muted-strong">
+          <Sun className="size-3.5" />
+          Light
+          <span className="rounded px-1 py-px text-[10px] font-medium uppercase tracking-wide text-muted ring-1 ring-inset ring-border-strong">
+            Active
+          </span>
         </div>
       </section>
 

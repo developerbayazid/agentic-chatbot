@@ -1,67 +1,50 @@
 @import "tailwindcss";
 
 /*
- * BAYAZID AI design tokens — Claude-inspired, white-first.
+ * BAYAZID AI design tokens — strict black and white.
  *
- * Every colour a component uses is declared here as a semantic role; no
- * component hardcodes a palette value. Light is the primary experience. A dark
- * palette exists for the optional preference, but the layout, spacing, and
- * typography are designed against the light values.
+ * ChatGPT-inspired: white canvas, near-black type, black primary actions,
+ * neutral grays for structure. No accent hue, no warm tints, no gradients.
+ *
+ * Components reference semantic roles only (--accent, --border, ...), never a
+ * raw palette value, which is why this file is the single place the identity is
+ * defined.
+ *
+ * Light only for now. Dark mode is deliberately out of scope for this phase; a
+ * half-specified palette would be worse than none, so it is absent rather than
+ * approximate.
  */
 
-@custom-variant dark (&:where(.dark, .dark *));
-
-:root,
-.light {
+:root {
   --background: #ffffff;
-  --sidebar: #f7f6f3;
-  --surface: #faf9f7;
+  --sidebar: #f9f9f9;
+  --surface: #f7f7f7;
   --surface-raised: #ffffff;
-  --surface-hover: #eeece7;
-  --border: #e8e6e1;
-  --border-strong: #d8d5cd;
-  --foreground: #1f1e1d;
-  --muted: #6b6a67;
-  --muted-strong: #4a4845;
-  --accent: #c96442;
-  --accent-hover: #b0563a;
-  --accent-contrast: #ffffff;
-  --accent-soft: #fbeee8;
-  --success: #3f7d58;
-  --success-soft: #edf4ef;
-  --warning: #b07d3a;
-  --warning-soft: #fbf3e7;
-  --danger: #b4453a;
-  --danger-soft: #fbeeec;
-  --user-bubble: #f4f2ee;
-  --code-surface: #f7f6f3;
-  --ring: #c96442;
-}
+  --surface-hover: #f0f0f0;
+  --surface-active: #e8e8e8;
+  --border: #e5e5e5;
+  --border-strong: #cfcfcf;
+  --foreground: #0d0d0d;
+  --muted: #6e6e6e;
+  --muted-strong: #3d3d3d;
 
-.dark {
-  --background: #141413;
-  --sidebar: #1b1a18;
-  --surface: #1b1a18;
-  --surface-raised: #201f1d;
-  --surface-hover: #2a2826;
-  --border: #302e2b;
-  --border-strong: #423f3b;
-  --foreground: #f0eee9;
-  --muted: #a5a29b;
-  --muted-strong: #c9c5bd;
-  --accent: #d97757;
-  --accent-hover: #e08a6e;
-  --accent-contrast: #1b1a18;
-  --accent-soft: #2e2420;
-  --success: #7fb894;
-  --success-soft: #1d2a21;
-  --warning: #d9a86a;
-  --warning-soft: #2c2418;
-  --danger: #e08c81;
-  --danger-soft: #2d1f1d;
-  --user-bubble: #262422;
-  --code-surface: #1b1a18;
-  --ring: #d97757;
+  /* Primary actions are black on white, never a hue. */
+  --accent: #0d0d0d;
+  --accent-hover: #262626;
+  --accent-contrast: #ffffff;
+  --accent-soft: #f2f2f2;
+
+  /* Status colours are the only saturated values, used sparingly. */
+  --success: #1a7f37;
+  --success-soft: #f0f8f2;
+  --warning: #9a6700;
+  --warning-soft: #fdf8ec;
+  --danger: #b42318;
+  --danger-soft: #fdf2f1;
+
+  --user-bubble: #f4f4f4;
+  --code-surface: #f7f7f7;
+  --ring: #0d0d0d;
 }
 
 @theme inline {
@@ -70,6 +53,7 @@
   --color-surface: var(--surface);
   --color-surface-raised: var(--surface-raised);
   --color-surface-hover: var(--surface-hover);
+  --color-surface-active: var(--surface-active);
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
   --color-foreground: var(--foreground);
@@ -92,10 +76,9 @@
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
 
-  --radius-card: 0.875rem;
-  --radius-composer: 1.25rem;
-
-  --animate-spin-slow: spin 1.1s linear infinite;
+  /* Restrained radii: nothing balloon-shaped. */
+  --radius-card: 0.625rem;
+  --radius-composer: 1rem;
 }
 
 @layer base {
@@ -105,10 +88,6 @@
 
   html {
     color-scheme: light;
-  }
-
-  html.dark {
-    color-scheme: dark;
   }
 
   body {
@@ -136,7 +115,7 @@
   }
 
   ::selection {
-    background-color: var(--accent-soft);
+    background-color: var(--surface-active);
     color: var(--foreground);
   }
 

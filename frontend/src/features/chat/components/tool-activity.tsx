@@ -106,7 +106,7 @@ export function ToolActivityRow({ activity }: { activity: ToolActivity }) {
             </span>
           )}
           <span className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-muted">
-            <StatusLabel status={activity.status} error={activity.error} />
+            <StatusLabel status={activity.status} />
             {elapsed !== undefined && (
               <>
                 <span aria-hidden>·</span>
@@ -166,7 +166,7 @@ function StatusIcon({ status }: { status: ToolStatus }) {
   }
 }
 
-function StatusLabel({ status, error }: { status: ToolStatus; error?: string }) {
+function StatusLabel({ status }: { status: ToolStatus }) {
   switch (status) {
     case "pending":
       return <span>Queued</span>;
@@ -175,7 +175,7 @@ function StatusLabel({ status, error }: { status: ToolStatus; error?: string }) 
     case "completed":
       return <span className="text-success">Completed</span>;
     case "failed":
-      return <span className="text-danger">{error ? "Failed" : "Failed"}</span>;
+      return <span className="text-danger">Failed</span>;
     case "cancelled":
       return <span>Cancelled</span>;
   }

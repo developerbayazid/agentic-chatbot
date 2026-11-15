@@ -51,6 +51,25 @@ def _fresh():
     )
 
 
+def _reset_dimension_artifacts(connection) -> None:
+    """Drop the pgvector column so its fixed dimension does not leak.
+
+    ``embedding_vec`` is created as ``vector(N)`` for whatever N the current test
+    configured. A ``vector(4)`` left behind makes every later 1536-dimension test
+    fail with "expected 4 dimensions, not 1536". Dropping it (and its index) lets
+    the next ``init_schema`` recreate it at the right size.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "DROP INDEX IF EXISTS idx_chunks_embedding_hnsw"
+        )
+        cursor.execute(
+            "ALTER TABLE document_chunks DROP COLUMN IF EXISTS embedding_vec"
+        )
+        cursor.execute("DELETE FROM rag_meta WHERE key = 'embedding_dimensions'")
+    connection.commit()
+
+
 @pytest.fixture
 def pg():
     connection, documents, vectors = _fresh()
@@ -58,21 +77,51 @@ def pg():
     try:
         yield documents, vectors
     finally:
-        # Leave the database in a state other tests can use: these tests run with
-        # a 4-dimension config, and a stale `embedding_dimensions` row would make
-        # every 1536-dimension test afterwards refuse to start.
+        # Leave the database usable: these tests run with a 4-dimension config,
+        # and both the stored dimension row and the vector column are sized.
         try:
             with connection.cursor() as cursor:
                 cursor.execute(
                     "TRUNCATE document_chunks, documents, notes, threads "
                     "RESTART IDENTITY"
                 )
-                cursor.execute(
-                    "DELETE FROM rag_meta WHERE key = 'embedding_dimensions'"
-                )
             connection.commit()
+            _reset_dimension_artifacts(connection)
         finally:
             connection.close()
+
+
+@requires_postgres
+def test_uses_pgvector_when_the_extension_is_installed(pg):
+    """Assert the fast path is really in use, not silently falling back.
+
+    Without this, a missing extension would degrade search to a full scan and
+    every other test here would still pass.
+    """
+    documents, vectors = pg
+    connection = vectors._connection
+
+    installed = connection.cursor().execute(
+        "SELECT 1 AS present FROM pg_extension WHERE extname = 'vector'"
+    ).fetchone()
+
+    if installed is None:
+        pytest.skip("pgvector is not installed in this database")
+
+    assert vectors.mode == "pgvector"
+
+    # The column and the HNSW index must both exist.
+    columns = connection.cursor().execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name = 'document_chunks' AND column_name = 'embedding_vec'"
+    ).fetchall()
+    assert columns, "embedding_vec column is missing"
+
+    indexes = connection.cursor().execute(
+        "SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_chunks_embedding_hnsw'"
+    ).fetchall()
+    assert indexes, "HNSW index is missing"
+    assert "hnsw" in indexes[0]["indexdef"].lower()
 
 
 @requires_postgres
@@ -112,7 +161,9 @@ def test_scores_match_cosine_similarity(pg):
     (_, score), = vectors.search(["default"], query, 1)
 
     # cos = (1*0.6) / (1 * 1) = 0.6
-    assert score == pytest.approx(0.6, abs=1e-9)
+    # pgvector stores float32, so exact double equality does not hold; the
+    # tolerance reflects single precision rather than a wrong result.
+    assert score == pytest.approx(0.6, abs=1e-6)
 
 
 @requires_postgres
@@ -228,8 +279,8 @@ def test_owner_isolation_end_to_end(pg, tmp_path):
         assert not any("Alice" in hit.content for hit in bob_hits)
     finally:
         container.close()
-        # Reset the dimension row so later tests are not blocked by this file's
-        # small embedding size.
+        # Reset the dimension row and vector column so later tests are not blocked
+        # by this file's small embedding size.
         from agentic_chatbot.postgres import create_connection
 
         cleanup = create_connection(POSTGRES_DSN)
@@ -237,6 +288,6 @@ def test_owner_isolation_end_to_end(pg, tmp_path):
             cursor.execute(
                 "TRUNCATE document_chunks, documents, notes, threads RESTART IDENTITY"
             )
-            cursor.execute("DELETE FROM rag_meta WHERE key = 'embedding_dimensions'")
         cleanup.commit()
+        _reset_dimension_artifacts(cleanup)
         cleanup.close()

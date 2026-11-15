@@ -50,8 +50,16 @@ def _postgres():
     # new database.
     with connection.cursor() as cursor:
         cursor.execute("SELECT to_regclass('rag_meta') AS found")
-        if cursor.fetchone()["found"] is not None:
+        has_schema = cursor.fetchone()["found"] is not None
+
+        if has_schema:
             cursor.execute("DELETE FROM rag_meta WHERE key = 'embedding_dimensions'")
+
+            # A pgvector column sized by another test file would reject this
+            # suite's vectors; drop it so `init_schema` recreates it correctly.
+            cursor.execute(
+                "ALTER TABLE document_chunks DROP COLUMN IF EXISTS embedding_vec"
+            )
     connection.commit()
 
     pg_init(connection)

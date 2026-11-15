@@ -75,6 +75,44 @@ DOCUMENT_CHUNKS_EMBEDDING = (
     "embedding DOUBLE PRECISION[]"
 )
 
+# pgvector setup runs after the base statements; see `pgvector_setup`.
+
+
+def pgvector_setup(dimensions: int) -> str:
+    """Create the vector column and HNSW index, if the extension is present.
+
+    The dimension is interpolated rather than hardcoded so a deployment using a
+    different embedding model still gets a correctly-sized column. It comes from
+    validated configuration (an ``int``), never from user input.
+    """
+    return f"""
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+        EXECUTE 'ALTER TABLE document_chunks
+                 ADD COLUMN IF NOT EXISTS embedding_vec vector({int(dimensions)})';
+        EXECUTE 'CREATE INDEX IF NOT EXISTS idx_chunks_embedding_hnsw
+                 ON document_chunks USING hnsw (embedding_vec vector_cosine_ops)';
+    END IF;
+END
+$$
+"""
+
+
+# Existing arrays are copied into the vector column once, so enabling the
+# extension does not require re-ingesting. Guarded the same way.
+PGVECTOR_BACKFILL = """
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+        EXECUTE 'UPDATE document_chunks
+                 SET embedding_vec = embedding::vector
+                 WHERE embedding_vec IS NULL AND embedding IS NOT NULL';
+    END IF;
+END
+$$
+"""
+
 RAG_META = """
 CREATE TABLE IF NOT EXISTS rag_meta (
     key   TEXT PRIMARY KEY,

@@ -303,7 +303,7 @@ plan, since they migrate the CLI's persistence too.
 | 3 — Slash commands & parity | **done — verified** |
 | 4 — Tools, activity, HITL | **done — verified** |
 | 5 — PostgreSQL foundation | **done — verified** |
-| 6 — pgvector & hybrid search | **done — with a documented deviation** (arrays, not pgvector; see below) |
+| 6 — pgvector & hybrid search | **done — pgvector installed and in use** |
 | 7 — Migration verification | **done** |
 | 8 — Security/performance/reliability | not started |
 | 9 — Final verification | not started |
@@ -529,6 +529,48 @@ diff containing no identifiers introduced by it.
 The chat input is now a full pill (`rounded-[1.75rem]`, circular send button),
 matching ChatGPT, rather than a fixed-radius box. Verified at lint 0, typecheck
 clean, 100 frontend tests, build exit 0.
+
+### Sprint 6 follow-up — pgvector installed
+
+The earlier deviation (arrays instead of pgvector) was caused by the extension
+being unavailable and unbuildable here, not by preference. That is now resolved:
+
+**pgvector 0.8.7 for PostgreSQL 18 is installed**, verified by
+`SELECT extversion ... → 0.8.7` and a live `<->` cosine query.
+
+How, given no Windows SDK and no admin shell:
+
+- Building from source failed at `corecrt.h` — Visual Studio Build Tools 2026 is
+  present but the **Windows SDK is not**, and there is no compiler for the C
+  runtime headers.
+- No `winget` or `choco` package exists for it.
+- A **prebuilt `vector.v0.8.7-pg18.zip`** exists for this exact major version;
+  it installed with one elevated copy into `Program Files\PostgreSQL\18`, which
+  required a UAC prompt.
+
+Schema changes (`init_schema`, idempotent):
+
+1. `ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS embedding_vec vector(1536)`.
+2. `CREATE INDEX ... USING hnsw (embedding_vec vector_cosine_ops)`.
+3. One-time `UPDATE ... SET embedding_vec = embedding::vector` backfill.
+
+`PgVectorStore` now detects the extension at construction and uses the vector
+column when present, falling back to the array column when not — so an
+installation without pgvector still runs.
+
+Retrieval verified on the production database: 375/375 chunks carry vectors,
+`mode == "pgvector"`, self-similarity **1.000000**, and an `EXPLAIN` under
+`enable_seqscan=off` confirms `Index Scan using idx_chunks_embedding_hnsw …
+Order By`. At 333 rows the planner still prefers a sequential scan plus sort,
+which is its correct choice at that size.
+
+Test note: pgvector stores **float32**, so cosine scores are exact only to single
+precision (0.6000000238 for 0.6). The parity test's tolerance was loosened from
+1e-9 to 1e-6 to reflect the storage type rather than a wrong result.
+
+Local cleanup: `chatbot_memory.db` and `data/faiss/` were deleted at the user's
+request, after copying both into the session scratchpad as a rollback path.
+
 
 
 

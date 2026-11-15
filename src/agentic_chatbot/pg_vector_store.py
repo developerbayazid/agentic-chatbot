@@ -1,32 +1,27 @@
-"""Embedding storage in PostgreSQL, replacing the on-disk FAISS indexes.
+"""Embedding storage in PostgreSQL, using pgvector when it is available.
 
 The interface mirrors :class:`agentic_chatbot.vector_store.VectorIndexStore`
 exactly — ``add``, ``replace``, ``remove``, ``search``, ``stats`` — so
-``DocumentService`` is unchanged and FAISS remains a fallback flag.
+``DocumentService`` is unchanged and FAISS remains a fallback for the SQLite
+backend.
 
-Storage format
---------------
-Embeddings are stored as ``double precision[]`` in ``document_chunks.embedding``
-rather than a ``vector`` column. That is a deliberate, documented trade-off:
+Two storage modes, chosen automatically
+---------------------------------------
+**pgvector (preferred).** When the ``vector`` extension exists, embeddings live in
+``document_chunks.embedding_vec vector(1536)`` with an HNSW index, and search is
+``ORDER BY embedding_vec <=> query`` — an indexed approximate nearest-neighbour
+scan. This is the intended production path.
 
-* **pgvector is not installed.** ``CREATE EXTENSION vector`` fails on this
-  server ("extension is not available"), and it cannot be built here because
-  there is no C toolchain. A ``vector`` column would simply not work.
-* An array column needs no extension, so vectors travel with the rows they
-  belong to, in the same transaction and the same backup.
-* Cosine similarity is computed in SQL over the candidate set, after the owner
-  filter, so the security-relevant property (another user's chunk can neither be
-  returned nor influence ordering) is unchanged.
+**Arrays (fallback).** Without the extension, the older
+``document_chunks.embedding DOUBLE PRECISION[]`` column is used and similarity is
+computed in SQL. Correct, but a full scan.
 
-Cost: search is a full scan of the namespace's chunks rather than an indexed
-approximate search. That is fine at this corpus size (hundreds of chunks) and is
-the honest limitation to fix when pgvector becomes available. ``SEARCH_INDEX`` in
-the docs records this. The conversion is mechanical: the same normalised vectors
-go into a ``vector(1536)`` column and the ORDER BY becomes ``<=>``.
+Both paths normalise queries identically and return cosine *similarity*
+(``1 - distance``), so scores are comparable across modes and with FAISS's
+``IndexFlatIP`` — which is what the retrieval thresholds are tuned against.
 
-Vectors are L2-normalised before storage, matching what FAISS received
-(``IndexFlatIP`` on normalised vectors == cosine similarity), so scores from the
-two backends are directly comparable.
+The mode is detected once at construction and cached; the extension cannot appear
+or vanish while the process runs.
 """
 
 from __future__ import annotations
@@ -46,10 +41,18 @@ class PgVectorStore:
         self._connection = wrap(connection)
         self._dimensions = int(dimensions)
         self._lock = threading.Lock()
+        self._mode: str | None = None
 
     @property
     def dimensions(self) -> int:
         return self._dimensions
+
+    @property
+    def mode(self) -> str:
+        """``"pgvector"`` or ``"array"`` — which storage this instance uses."""
+        if self._mode is None:
+            self._mode = self._detect_mode()
+        return self._mode
 
     def add(
         self,
@@ -69,9 +72,8 @@ class PgVectorStore:
         add_ids: Sequence[int],
         vectors: Sequence[Sequence[float]],
     ) -> None:
-        # The repository already deletes the document's chunks and inserts the new
-        # ones, so `remove_ids` refers to rows that no longer exist. Nothing to do
-        # for them; writing the new vectors is the whole operation.
+        # The repository already deleted the document's chunks and inserted new
+        # ones, so `remove_ids` refers to rows that no longer exist.
         if add_ids:
             self._write(add_ids, vectors)
 
@@ -80,10 +82,11 @@ class PgVectorStore:
             return
 
         placeholders = ", ".join("?" for _ in ids)
+        column = self._column
 
         with self._lock:
             self._connection.cursor().execute(
-                f"UPDATE document_chunks SET embedding = NULL "
+                f"UPDATE document_chunks SET {column} = NULL "
                 f"WHERE row_id IN ({placeholders})",
                 tuple(ids),
             )
@@ -95,19 +98,104 @@ class PgVectorStore:
         vector: Sequence[float],
         k: int,
     ) -> list[tuple[int, float]]:
-        """Return ``(chunk_row_id, cosine_similarity)`` ordered best first.
-
-        The query is normalised exactly as stored vectors were, so a dot product
-        is the cosine similarity. Rows without an embedding are skipped.
-        """
+        """Return ``(chunk_row_id, cosine_similarity)`` ordered best first."""
         if k <= 0 or not namespaces:
             return []
 
         normalised = _normalise(vector, self._dimensions)
+
+        if self.mode == "pgvector":
+            return self._search_pgvector(namespaces, normalised, k)
+
+        return self._search_array(namespaces, normalised, k)
+
+    def stats(self) -> dict[str, int]:
+        """Chunk counts per namespace that actually carry a vector."""
+        column = self._column
+
+        with self._lock:
+            rows = self._connection.cursor().execute(
+                f"""
+                SELECT namespace, COUNT(*) AS n
+                FROM document_chunks
+                WHERE {column} IS NOT NULL
+                GROUP BY namespace
+                """
+            ).fetchall()
+
+        return {row["namespace"]: int(row["n"]) for row in rows}
+
+    def probe(self) -> bool:
+        """Cheap readiness check: is the embedding column reachable?
+
+        Deliberately narrower than ``stats()`` — readiness runs on every probe and
+        must not aggregate the whole corpus. ``LIMIT 0`` still validates that the
+        connection is live and the column exists.
+        """
+        try:
+            column = self._column
+            self._connection.cursor().execute(
+                f"SELECT {column} FROM document_chunks LIMIT 0"
+            )
+            return True
+        except Exception:  # noqa: BLE001 - an unreachable store is not ready
+            return False
+
+    # ------------------------------------------------------------------ internals
+
+    @property
+    def _column(self) -> str:
+        return "embedding_vec" if self.mode == "pgvector" else "embedding"
+
+    def _detect_mode(self) -> str:
+        """Use pgvector when the extension is installed, otherwise fall back."""
+        try:
+            row = self._connection.cursor().execute(
+                "SELECT 1 AS present FROM pg_extension WHERE extname = 'vector'"
+            ).fetchone()
+
+            if row is not None:
+                return "pgvector"
+        except Exception:  # noqa: BLE001 - treat any failure as "not available"
+            pass
+
+        return "array"
+
+    def _search_pgvector(
+        self,
+        namespaces: Sequence[str],
+        normalised: list[float],
+        k: int,
+    ) -> list[tuple[int, float]]:
+        """Indexed ANN search. ``<=>`` is cosine distance, so similarity is 1-d."""
+        placeholders = ", ".join("?" for _ in namespaces)
+        literal = _pg_vector(normalised)
+
+        sql = f"""
+            SELECT row_id, 1 - (embedding_vec <=> ?::vector) AS score
+            FROM document_chunks
+            WHERE namespace IN ({placeholders})
+              AND embedding_vec IS NOT NULL
+            ORDER BY embedding_vec <=> ?::vector
+            LIMIT ?
+        """
+
+        with self._lock:
+            rows = self._connection.cursor().execute(
+                sql, (literal, *namespaces, literal, k)
+            ).fetchall()
+
+        return [(int(row["row_id"]), float(row["score"])) for row in rows]
+
+    def _search_array(
+        self,
+        namespaces: Sequence[str],
+        normalised: list[float],
+        k: int,
+    ) -> list[tuple[int, float]]:
+        """Fallback: cosine similarity computed over the namespace's rows."""
         placeholders = ", ".join("?" for _ in namespaces)
 
-        # Cosine similarity over the candidate set. `array_length` guards against
-        # a row written by an older configuration with a different size.
         sql = f"""
             SELECT row_id,
                    COALESCE((
@@ -124,55 +212,29 @@ class PgVectorStore:
 
         with self._lock:
             rows = self._connection.cursor().execute(
-                sql,
-                (list(normalised), *namespaces, self._dimensions, k),
+                sql, (list(normalised), *namespaces, self._dimensions, k)
             ).fetchall()
 
         return [(int(row["row_id"]), float(row["score"])) for row in rows]
-
-    def stats(self) -> dict[str, int]:
-        """Chunk counts per namespace that actually carry a vector."""
-        with self._lock:
-            rows = self._connection.cursor().execute(
-                """
-                SELECT namespace, COUNT(*) AS n
-                FROM document_chunks
-                WHERE embedding IS NOT NULL
-                GROUP BY namespace
-                """
-            ).fetchall()
-
-        return {row["namespace"]: int(row["n"]) for row in rows}
-
-    def probe(self) -> bool:
-        """Cheap readiness check: is the embedding column reachable?
-
-        Deliberately narrower than ``stats()`` — readiness runs on every probe and
-        must not aggregate the whole corpus. ``LIMIT 0`` still validates that the
-        connection is live and the column exists, which is what "ready" means here.
-        """
-        try:
-            self._connection.cursor().execute(
-                "SELECT embedding FROM document_chunks LIMIT 0"
-            )
-            return True
-        except Exception:  # noqa: BLE001 - an unreachable store is not ready
-            return False
 
     def _write(self, ids: Sequence[int], vectors: Sequence[Sequence[float]]) -> None:
         if len(ids) != len(vectors):
             raise ValueError("ids and vectors must be the same length")
 
         normalised = [_normalise(vector, self._dimensions) for vector in vectors]
+        column = self._column
+        pgvector = self.mode == "pgvector"
+        cast = "vector" if pgvector else "double precision[]"
 
         with self._lock:
             cursor = self._connection.cursor()
 
             for row_id, vector in zip(ids, normalised):
+                value: Any = _pg_vector(vector) if pgvector else vector
                 cursor.execute(
-                    "UPDATE document_chunks SET embedding = ?::double precision[] "
-                    "WHERE row_id = ?",
-                    (_pg_array(vector), row_id),
+                    f"UPDATE document_chunks SET {column} = ?::{cast} "
+                    f"WHERE row_id = ?",
+                    (value, row_id),
                 )
 
             self._connection.commit()
@@ -195,6 +257,6 @@ def _normalise(vector: Sequence[float], dimensions: int) -> list[float]:
     return [value / norm for value in values]
 
 
-def _pg_array(values: Sequence[float]) -> str:
-    """Render a Python list as a Postgres array literal."""
-    return "{" + ",".join(repr(float(value)) for value in values) + "}"
+def _pg_vector(values: Sequence[float]) -> str:
+    """Render a Python list as a pgvector literal: ``[1,2,3]``."""
+    return "[" + ",".join(repr(float(value)) for value in values) + "]"

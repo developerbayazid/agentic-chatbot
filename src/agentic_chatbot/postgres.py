@@ -110,6 +110,11 @@ def init_schema(
         with connection.cursor() as cursor:
             for statement in postgres_schema.ALL_STATEMENTS:
                 cursor.execute(statement)
+
+            # pgvector is optional: these statements no-op when the extension is
+            # absent, so an installation without it still starts.
+            cursor.execute(postgres_schema.pgvector_setup(embedding_dimensions))
+            cursor.execute(postgres_schema.PGVECTOR_BACKFILL)
             connection.commit()
 
         _check_embedding_dimensions(connection, embedding_dimensions)

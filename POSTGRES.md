@@ -23,41 +23,46 @@ The schema is created automatically on first start.
 | BM25 corpus | rebuilt in memory from SQL rows | unchanged — still rebuilt in memory |
 | ERP demo data | JSON file | unchanged — deliberately still JSON |
 
-## Embeddings are arrays, not pgvector — and why
+## Embeddings use pgvector
 
-`document_chunks.embedding` is `DOUBLE PRECISION[]`, not `vector(1536)`.
+`document_chunks.embedding_vec` is a `vector(1536)` column with an **HNSW index**
+(`vector_cosine_ops`), and search is `ORDER BY embedding_vec <=> query` — an
+indexed approximate nearest-neighbour scan returning cosine similarity
+(`1 - distance`).
 
-**pgvector is not installed here**, and cannot be: `CREATE EXTENSION vector`
-returns *"extension is not available"*, and there is no C toolchain on this
-machine to build it from source. A `vector` column would simply not work, so the
-honest options were an array column or leaving retrieval on FAISS.
+pgvector 0.8.7 for PostgreSQL 18 is installed on this machine's server. If it is
+ever missing, `PgVectorStore` detects that at construction and transparently falls
+back to the older `document_chunks.embedding DOUBLE PRECISION[]` column with
+in-SQL similarity. Both paths normalise queries identically and return comparable
+scores, so retrieval thresholds behave the same; only performance differs.
 
-What that buys and costs:
+Enabling the extension on an existing database needs no re-ingest: `init_schema`
+adds the column and index, then copies existing arrays across once.
 
-- **Buys:** vectors live in the same rows, transaction, and backup as the chunks
-  they describe. No side-car files to drift or lose. Owner filtering happens in
-  the same query that scores, so a foreign chunk still cannot be returned or
-  reorder an authorised one.
-- **Costs:** search is a scan over the namespace's chunks rather than an indexed
-  approximate search. Fine for hundreds or low thousands of chunks; it will need
-  pgvector well before millions.
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+```
 
-Vectors are L2-normalised before storage, exactly as FAISS received them
-(`IndexFlatIP` on normalised vectors *is* cosine similarity), so scores from
-either backend are directly comparable and tests assert the equivalence.
+Note on plan selection: with a few hundred chunks Postgres legitimately prefers a
+sequential scan plus sort over the HNSW index. That is the planner's correct
+choice, not a misconfiguration — forcing `enable_seqscan=off` shows the index is
+used. It becomes the default as the corpus grows.
 
-### Upgrading to pgvector later
+### Installing pgvector on Windows
 
-The interface is deliberately identical, so this is mechanical:
+The usual route is building from source, which needs the Windows SDK (C runtime
+headers) *and* administrator rights to write into `Program Files\PostgreSQL`.
 
-1. Install pgvector, then `CREATE EXTENSION vector`.
-2. `ALTER TABLE document_chunks ADD COLUMN vec vector(1536)` and backfill from
-   `embedding` (already normalised).
-3. Add an HNSW index.
-4. Change `PgVectorStore.search`'s `ORDER BY` to `ORDER BY vec <=> %s::vector`.
-5. Swap the column name in `_write`.
+If that is unavailable, a prebuilt binary for the exact major version works:
 
-`DocumentService`, RRF fusion, and every caller stay untouched.
+1. Download `vector.v<version>-pg18.zip` from
+   [andreiramani/pgvector_pgsql_windows](https://github.com/andreiramani/pgvector_pgsql_windows/releases).
+2. With an elevated shell, copy `lib\vector.dll` to `PostgreSQL\18\lib`, the
+   `share\extension\*` files to `PostgreSQL\18\share\extension`, and
+   `include\server\extension\vector\*` to the matching include path.
+3. `CREATE EXTENSION vector;` in each database.
+
+Verify with `SELECT extversion FROM pg_extension WHERE extname = 'vector';`.
 
 ## Migrating an existing SQLite database
 

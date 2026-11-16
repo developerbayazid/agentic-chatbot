@@ -55,15 +55,20 @@ export function ConversationView({ threadId }: { threadId: string | null }) {
   const [notice, setNotice] = useState<string | null>(null);
   const commands = useCommands(threadId, setNotice);
 
-  // The route is a single client component now, so switching conversations no
-  // longer remounts this view. Without clearing, the previous thread's streamed
-  // text, tool rows, and notice would leak into the conversation just opened.
+  // The route is a single client component, so changing conversations no longer
+  // remounts this view. Without clearing, the previous conversation's streamed
+  // text, tool rows, notice, and composer draft would remain on screen after
+  // opening another one — or after clicking "New chat".
   //
-  // Creation is excluded on purpose: a new chat changes the URL from `/chat` to
-  // `/chat/<id>` once its first message resolves, and that turn *belongs* to the
-  // thread now in the URL. Only a change between two existing threads clears.
+  // Leaving any existing thread clears, whether the destination is another thread
+  // (`/chat/<a>` → `/chat/<b>`) or a brand-new conversation (`/chat/<a>` → `/chat`).
+  // Arriving *at* a thread from a new chat is deliberately excluded: that is the
+  // creation path (the URL gains an id while its first reply is streaming), and
+  // that reply belongs to the thread now in the URL.
   const streamReset = stream.reset;
+  const closeCommands = commands.closeDialog;
   const previousThread = useRef<string | null>(threadId);
+
   useEffect(() => {
     const previous = previousThread.current;
 
@@ -71,11 +76,13 @@ export function ConversationView({ threadId }: { threadId: string | null }) {
 
     previousThread.current = threadId;
 
-    if (previous !== null && threadId !== null) {
+    if (previous !== null) {
       streamReset();
       setNotice(null);
+      setDraft("");
+      closeCommands();
     }
-  }, [threadId, streamReset]);
+  }, [threadId, streamReset, closeCommands]);
 
   // Opening a conversation should land on its newest message with no animation.
   // `history.dataUpdatedAt` changes on every successful fetch, so this re-runs

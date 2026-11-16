@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 /**
@@ -108,5 +108,39 @@ describe("single-page routing", () => {
     // Both would shadow or conflict with the consolidated route.
     expect(existsSync(join(ROOT, "app/(dashboard)/chat/page.tsx"))).toBe(false);
     expect(existsSync(join(ROOT, "app/(dashboard)/chat/[threadId]"))).toBe(false);
+  });
+
+  it("clears the previous conversation when the route leaves a thread", () => {
+    // One route means the view is not remounted between conversations, so
+    // switching — or clicking New chat — would otherwise leave the previous
+    // transcript, streamed text, and composer draft on screen.
+    const view = read("features/chat/components/conversation-view.tsx");
+
+    expect(view).toContain("streamReset()");
+    expect(view).toContain('setDraft("")');
+
+    // Creation must still be allowed through: `/chat` -> `/chat/<id>` happens
+    // while that thread's first reply is streaming.
+    expect(view).toMatch(/if \(previous !== null\)/);
+  });
+
+  it("has no page component that awaits route params", () => {
+    // `await params` in a server page is what made navigation non-instant.
+    // Only the BFF route handlers may touch `params`, and they are not pages.
+    const walk = (dir: string): string[] =>
+      readdirSync(dir).flatMap((entry) => {
+        const full = join(dir, entry);
+        return statSync(full).isDirectory() ? walk(full) : [full];
+      });
+
+    const pages = walk(join(ROOT, "app")).filter(
+      (file) => file.endsWith("page.tsx") || file.endsWith("layout.tsx"),
+    );
+
+    expect(pages.length).toBeGreaterThan(0);
+
+    for (const page of pages) {
+      expect(readFileSync(page, "utf8")).not.toContain("await params");
+    }
   });
 });

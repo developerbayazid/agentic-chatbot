@@ -131,16 +131,21 @@ def _knowledge_catalog(document_service: DocumentService) -> str:
 def _create_storage(settings: Settings) -> Any:
     """Open the configured storage backend.
 
-    SQLite stays the default so an existing installation keeps working with no
-    configuration change; Postgres is opted into explicitly.
+    PostgreSQL is the default; SQLite is opt-in for offline use and is what the
+    test suite uses.
     """
     if settings.database_backend == "postgres":
         from agentic_chatbot.postgres import create_connection as pg_connect
 
         if not settings.postgres_dsn:
+            # Actionable, because this is the first thing a fresh clone hits: the
+            # repository ships no credentials.
             raise RuntimeError(
-                "DATABASE_BACKEND=postgres requires POSTGRES_DSN, for example "
-                "postgresql://user:password@127.0.0.1:5432/bayazid"
+                "DATABASE_BACKEND=postgres requires POSTGRES_DSN, which is not set.\n"
+                "  Set it in .env (see .env.example), for example:\n"
+                "    POSTGRES_DSN=postgresql://user:password@127.0.0.1:5432/bayazid\n"
+                "  Or run without PostgreSQL:\n"
+                "    DATABASE_BACKEND=sqlite"
             )
 
         return pg_connect(settings.postgres_dsn)

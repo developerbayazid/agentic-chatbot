@@ -234,7 +234,10 @@ Optional (defaults shown):
 ```env
 # Storage backend: "postgres" (default) or "sqlite" for offline use.
 DATABASE_BACKEND=postgres
-POSTGRES_DSN=postgresql://postgres:postgres@127.0.0.1:5432/bayazid
+
+# Required for the postgres backend — no default is shipped, because a
+# connection string contains credentials. Set it in .env, never in source.
+POSTGRES_DSN=postgresql://USER:PASSWORD@HOST:5432/DATABASE
 
 # Only used when DATABASE_BACKEND=sqlite
 DATABASE_PATH=chatbot_memory.db

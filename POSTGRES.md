@@ -8,8 +8,13 @@ and as the migration source, but Postgres is the default.
 
 ```bash
 DATABASE_BACKEND=postgres
-POSTGRES_DSN=postgresql://postgres:postgres@127.0.0.1:5432/bayazid
+POSTGRES_DSN=postgresql://USER:PASSWORD@HOST:5432/DATABASE
 ```
+
+There is **no default DSN**. A connection string contains credentials, so none is
+committed to the repository; the application refuses to start on the Postgres
+backend until `POSTGRES_DSN` is set. Put the real value in `.env` (gitignored) or
+in your platform's secret manager.
 
 The schema is created automatically on first start.
 

@@ -22,8 +22,8 @@ Usage::
 
     uv run python -m agentic_chatbot.migrate_to_postgres \
         --sqlite chatbot_memory.db \
-        --dsn postgresql://postgres:postgres@127.0.0.1:5432/bayazid \
-        [--checkpoints] [--dry-run]
+        --dsn "postgresql://USER:PASSWORD@HOST:5432/DATABASE" \
+        [--checkpoints] [--vectors] [--dry-run]
 """
 
 from __future__ import annotations

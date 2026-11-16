@@ -19,7 +19,13 @@ class Settings(BaseSettings):
     # Storage backend. PostgreSQL is the default; SQLite remains available for
     # offline use and as the migration source.
     database_backend: Literal["sqlite", "postgres"] = "postgres"
-    postgres_dsn: str = "postgresql://postgres:postgres@127.0.0.1:5432/bayazid"
+
+    # Required when `database_backend="postgres"`, supplied through the
+    # environment or `.env`. It is deliberately empty by default: a connection
+    # string embeds credentials, and a credential committed to source is a
+    # credential leaked to everyone who can read the repository. `build_container`
+    # refuses to start rather than guessing a localhost default.
+    postgres_dsn: str = ""
     llm_model: str = "gpt-4o-mini"
     llm_temperature: float = 0.0
     system_prompt: str = "You are a helpful AI assistant."

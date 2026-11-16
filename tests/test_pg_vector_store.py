@@ -37,13 +37,19 @@ def _fresh():
     from agentic_chatbot.repository import DocumentsRepository
 
     connection = create_connection(POSTGRES_DSN)
+
+    # Reset first, schema second. `init_schema` refuses to run when a stored
+    # `embedding_dimensions` disagrees with the requested size, and another test
+    # file may legitimately have run with 1536. The stale row and any wrong-sized
+    # `embedding_vec` column must go before the schema is applied.
+    _reset_dimension_artifacts(connection)
+
     init_schema(connection, embedding_dimensions=DIMENSIONS)
 
     with connection.cursor() as cursor:
         cursor.execute(
             "TRUNCATE document_chunks, documents, notes, threads RESTART IDENTITY"
         )
-        cursor.execute("DELETE FROM rag_meta WHERE key = 'embedding_dimensions'")
     connection.commit()
 
     return connection, DocumentsRepository(connection), PgVectorStore(
@@ -58,15 +64,23 @@ def _reset_dimension_artifacts(connection) -> None:
     configured. A ``vector(4)`` left behind makes every later 1536-dimension test
     fail with "expected 4 dimensions, not 1536". Dropping it (and its index) lets
     the next ``init_schema`` recreate it at the right size.
+
+    Safe on an empty database: every statement is a no-op when the object is
+    absent, which is why the calls are guarded by ``IF EXISTS``.
     """
     with connection.cursor() as cursor:
-        cursor.execute(
-            "DROP INDEX IF EXISTS idx_chunks_embedding_hnsw"
-        )
-        cursor.execute(
-            "ALTER TABLE document_chunks DROP COLUMN IF EXISTS embedding_vec"
-        )
-        cursor.execute("DELETE FROM rag_meta WHERE key = 'embedding_dimensions'")
+        cursor.execute("SELECT to_regclass('document_chunks') AS found")
+        if cursor.fetchone()["found"] is not None:
+            cursor.execute("DROP INDEX IF EXISTS idx_chunks_embedding_hnsw")
+            cursor.execute(
+                "ALTER TABLE document_chunks DROP COLUMN IF EXISTS embedding_vec"
+            )
+
+        cursor.execute("SELECT to_regclass('rag_meta') AS found")
+        if cursor.fetchone()["found"] is not None:
+            cursor.execute(
+                "DELETE FROM rag_meta WHERE key = 'embedding_dimensions'"
+            )
     connection.commit()
 
 

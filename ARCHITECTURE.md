@@ -1089,8 +1089,8 @@ Relational data and conversation checkpoints live in **one store**, chosen by
 
 | Backend | Default | Adapter |
 | --- | --- | --- |
-| `sqlite` | yes | `database.py` (`sqlite3`) |
-| `postgres` | opt-in | `postgres.py` + `postgres_schema.py` (`psycopg`) |
+| `postgres` | **yes** | `postgres.py` + `postgres_schema.py` (`psycopg`) |
+| `sqlite` | fallback | `database.py` (`sqlite3`) |
 
 The repositories are written once against `sql_backend.py`, which absorbs the
 three differences that actually exist between the engines — `?` → `%s`
@@ -1104,7 +1104,21 @@ Two consequences worth knowing:
   graph state and relational rows commit together. Both engines keep the single
   connection/single lock design described in §13.
 - Postgres columns are `TIMESTAMP` *without* time zone, matching SQLite's naive
-  UTC semantics exactly. See `POSTGRES.md` for why, and for the migration script.
+  UTC semantics exactly, so a migrated value is byte-identical. See `POSTGRES.md`.
+
+### Embeddings
+
+`PgVectorStore` (`pg_vector_store.py`) stores vectors in
+`document_chunks.embedding_vec vector(1536)` with an HNSW index and searches with
+`ORDER BY embedding_vec <=> query`, returning `1 - distance`. It detects the
+`vector` extension at construction and falls back to a
+`DOUBLE PRECISION[]` column with in-SQL similarity when the extension is absent,
+so an installation without pgvector still runs. Both paths L2-normalise identically,
+which keeps retrieval thresholds valid across backends.
+
+Owner filtering happens **inside each retriever, before RRF fusion** — never after.
+Filtering afterwards would let a foreign chunk reorder an authorised one. This is
+re-proven on Postgres by `tests/test_pg_vector_store.py`.
 
 The SQL below is the SQLite form; `postgres_schema.py` is the Postgres
 equivalent.
@@ -1530,6 +1544,70 @@ lifespan.
 
 `uv run agentic-chatbot` still enters `cli/app.py::main()`; the API never imports
 CLI presentation code, and starting the API never starts the CLI.
+
+---
+
+## 10b. Web application (`frontend/`)
+
+A Next.js App Router application, deployed as a **separate service** from the API.
+It is a single-page app in the meaningful sense: the shell mounts once and only
+`children` is replaced on navigation, so the sidebar, the conversation list, and
+their state persist across route changes.
+
+### The BFF boundary
+
+The browser never talks to FastAPI. Every call goes to `/api/backend/*`, a Next
+route handler that attaches the bearer token from an **HttpOnly cookie** and
+forwards the request — including SSE, unbuffered. The JWT is therefore never
+readable by client JavaScript.
+
+```
+browser → /api/backend/api/v1/threads → FastAPI
+          (adds Authorization from the cookie)
+```
+
+`lib/api/client.ts` is the only place that knows this prefix, so no feature
+component builds a URL.
+
+### Layout and scrolling
+
+The shell owns scrolling: `<main id="main-scroll">` is `overflow-y-auto`, so any
+page taller than the viewport works without opting in. This was a real bug — it
+was `overflow-hidden`, which silently clipped the tool catalog and made it look
+empty. The conversation view fills that height instead of overflowing it, because
+it manages a sticky composer and its own scroll container.
+
+Scrollbars are styled per element via `.scroll-area`, not globally. A global
+`*` rule leaked a track into the composer's textarea, drawing a scrollbar beside
+the send button. `textarea` now hides its scrollbar and grows with content.
+
+`RouteScrollReset` resets the shell's scroller on navigation — a SPA does not
+reload the document, so nothing else would.
+
+### State
+
+| Kind | Owner |
+| --- | --- |
+| Server data (threads, documents, tools, approvals) | TanStack Query |
+| UI state (sidebar collapsed, mobile drawer) | Zustand |
+| Session identity | HttpOnly cookie, read via `/api/auth/session` |
+| Streaming turn state | `use-chat-stream`, keyed by `tool_call_id` |
+
+### Streaming and tools
+
+`use-chat-stream` folds SSE frames into one `StreamState`. Tool activities are
+correlated by `tool_call_id`, so two parallel calls to the same tool stay
+separate, and elapsed times are measured between the real `tool_start` and
+`tool_end` arrivals — never a client-side guess. A turn the reader stops becomes
+`"stopped"`, distinct from `"completed"`, so a truncated answer does not present
+itself as finished.
+
+### Commands
+
+`features/commands/registry.ts` maps the CLI's commands to web handlers. Every
+`available` entry must have a handler; every `planned` entry must not, and must
+carry a message. Planned commands (`/skills`, `/plugins`, `/mcp`) are listed but
+inert, and their pages say plainly that nothing there is simulated.
 
 ---
 

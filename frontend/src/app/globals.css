@@ -119,9 +119,28 @@
     color: var(--foreground);
   }
 
-  * {
+  /*
+   * Scrollbars are styled per element, not globally.
+   *
+   * A `*` rule applied a track to every scrollable box, including the composer's
+   * textarea, which drew a visible scrollbar beside the send button once the
+   * pill had any overflow. Only genuine content containers opt in, below.
+   */
+  .scroll-area {
     scrollbar-width: thin;
     scrollbar-color: var(--border-strong) transparent;
+    /* Keep a gutter so content does not shift when a scrollbar appears. */
+    scrollbar-gutter: stable;
+  }
+
+  /* The composer grows with its content and never shows a scrollbar. */
+  textarea {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  textarea::-webkit-scrollbar {
+    display: none;
   }
 
   @media (prefers-reduced-motion: reduce) {

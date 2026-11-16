@@ -7,8 +7,17 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { useUiStore } from "@/stores/ui";
 
 /**
- * Application shell: warm sidebar + the conversation. There is deliberately no
- * top navigation bar over the content — the conversation owns the page.
+ * Application shell: sidebar plus the routed page.
+ *
+ * The shell is mounted once and never unmounts during navigation, which is what
+ * makes the app feel like a single page: the sidebar, its scroll position, and
+ * the open conversation list all survive a route change.
+ *
+ * Scrolling is owned here rather than by each page. `main` scrolls, so any page
+ * longer than the viewport works without opting in — previously it was
+ * `overflow-hidden`, which silently clipped long pages such as the tool catalog.
+ * The conversation opts out of page scrolling by filling its own height, since
+ * it manages a sticky composer and a scroll container internally.
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const setMobileNavOpen = useUiStore((s) => s.setMobileNavOpen);
@@ -30,7 +39,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Button>
         </div>
 
-        <main className="min-h-0 flex-1 overflow-hidden">{children}</main>
+        <main id="main-scroll" className="scroll-area min-h-0 flex-1 overflow-y-auto">
+          {children}
+        </main>
       </div>
     </div>
   );

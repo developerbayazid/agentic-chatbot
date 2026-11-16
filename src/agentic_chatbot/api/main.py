@@ -122,6 +122,27 @@ def create_app(
         request_id = set_request_id(request.headers.get(HEADER))
         response = await call_next(request)
         response.headers[HEADER] = request_id
+
+        # Baseline hardening. A reverse proxy or CDN should also set these, but
+        # the service must be safe on its own: the API returns JSON only, so it
+        # never needs to be framed or sniffed, and HSTS is set when the request
+        # arrived over TLS (a plain-HTTP deployment behind a TLS terminator still
+        # gets it, because the proxy forwards the scheme).
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        response.headers.setdefault(
+            "Permissions-Policy", "geolocation=(), microphone=(), camera=()"
+        )
+
+        forwarded = request.headers.get("x-forwarded-proto", request.url.scheme)
+
+        if forwarded == "https":
+            response.headers.setdefault(
+                "Strict-Transport-Security",
+                "max-age=31536000; includeSubDomains",
+            )
+
         return response
 
     install_error_handlers(app)

@@ -82,9 +82,11 @@ export function ConversationView({ threadId }: { threadId: string | null }) {
   }
 
   return (
+    // `h-full` fills the scrolling `main` without adding a second scrollbar;
+    // the conversation owns its own scroll container so the composer stays put.
     <div className="flex h-full flex-col">
       <div className="relative min-h-0 flex-1">
-        <div ref={scrollRef} className="h-full overflow-y-auto">
+        <div ref={scrollRef} className="scroll-area h-full overflow-y-auto">
           <div className="mx-auto w-full max-w-3xl px-5 pb-10 pt-6">
             {history.isLoading && threadId && (
               <div className="space-y-3">

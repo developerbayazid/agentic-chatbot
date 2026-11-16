@@ -1,186 +1,208 @@
 # Agentic AI Chatbot
 
-A hands-on project for learning and building an **Agentic AI Chatbot** with Python,
-LangChain, and LangGraph.
+An **agentic AI assistant** with three presentations over one core: a terminal
+**CLI**, a **REST API** (FastAPI), and a **web app** (Next.js). It streams replies
+token by token, calls tools through a LangGraph loop, performs retrieval-augmented
+generation over your documents, and pauses for **human approval** before any
+sensitive action runs.
 
-The application is currently a modular, interactive **CLI**. It preserves
-thread-isolated conversations in SQLite through LangGraph's `SqliteSaver`,
-generates conversation titles automatically, streams model responses token by
-token, and supports tool calling through a LangGraph tool loop. It also performs
-**retrieval-augmented generation** over local Markdown, text, and PDF files using
-**hybrid search**: OpenAI embeddings in one FAISS index per namespace fused with
-BM25 keyword search through Reciprocal Rank Fusion (RRF). Optional LangSmith
-tracing sends runs to LangSmith for debugging and monitoring. The code is split
-into presentation, service, graph, retrieval, and persistence layers so a
-FastAPI backend can be added later without rewriting business logic.
+Storage is **PostgreSQL**: threads, notes, documents, chunk embeddings (`pgvector`
+with an HNSW index), and LangGraph conversation checkpoints all live in one
+database. SQLite remains available as a fallback for offline use.
 
-The same agent now includes a realistic **ERP-style inventory domain** for
-products, categories, stock, customers, suppliers, sales, invoices, payments,
-purchase orders, expenses, and returns, backed by one inspectable JSON dataset.
-Sensitive operations (price changes, deactivations, stock adjustments, payments,
-purchase orders, expenses, and return approvals) pause the graph with a LangGraph
-`interrupt()` and wait for a human to **approve, edit the arguments, or reject**
-them in the terminal. The pending decision is checkpointed, so it survives a
-restart and resumes on the same thread ID. See [`HITL.md`](./HITL.md)
-and [`src/agentic_chatbot/inventory/README.md`](./src/agentic_chatbot/inventory/README.md).
+The web app is a **single-page application**: one document, client-side
+navigation, an HttpOnly-cookie session, and a black-and-white interface modelled
+on ChatGPT's layout — a date-grouped conversation sidebar, a slash-command
+composer, and a live tool-activity timeline.
 
-The terminal experience is a premium **emerald-grid** interface built with
-**Rich** and **prompt_toolkit**: a framed welcome hero with a neural-network grid
-backdrop and live runtime status, a `/` command menu with descriptions, Tab
-completion (including thread IDs), contextual help, fuzzy suggestions for typos,
-and Markdown rendering for structured answers. Colours and typography are
-centralised in a single design system (`cli/theme.py`) so the whole interface
-shares one emerald identity.
+> Deploying? Start with [`POSTGRES.md`](./POSTGRES.md) for the database and
+> [`API.md`](./API.md) for the REST contract. Design notes are in
+> [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
-For the full design and migration plan, see [`ARCHITECTURE.md`](./ARCHITECTURE.md).
+## What it does
+
+- **Conversations** — thread-isolated history, automatic titles, token streaming,
+  and resumable state.
+- **Retrieval (RAG)** — Markdown, text, and PDF files are chunked, embedded, and
+  stored in PostgreSQL. Hybrid search fuses vector similarity with BM25 keyword
+  matching via Reciprocal Rank Fusion. Retrieval is **scoped to the caller**: the
+  owner filter runs inside each retriever *before* fusion, so another user's
+  chunk can neither be returned nor influence the ranking of an authorised one.
+- **Tools** — 91 tools, 15 of which are approval-gated. `GET /api/v1/tools`
+  publishes the catalog, and the `requires_approval` flag is read from the same
+  policy the graph enforces.
+- **Human in the loop** — a sensitive action interrupts the graph; an approval is
+  bound to that specific interrupt, so a stale, replayed, or concurrently
+  submitted decision is refused rather than executed twice.
+- **ERP demo domain** — products, stock, customers, sales, invoices, and purchase
+  orders over one inspectable JSON dataset. It is a *demo dataset for the tools*,
+  deliberately not a dashboard, and it is not part of the database migration.
+
+For the full design, see [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
 ## Project Goals
 
 - Build an AI-powered conversational chatbot.
 - Understand the fundamentals of Agentic AI.
 - Explore LangChain and LangGraph through practical implementation.
-- Preserve conversation history and thread isolation with SQLite.
-- Keep business logic framework-agnostic so it is reusable by a CLI or an API.
+- Preserve conversation history and thread isolation.
+- Keep business logic framework-agnostic so it is reusable by the CLI, the API,
+  and the web app.
 - Provide a tool-calling loop with a single registry of local and mock-backed tools.
-- Add retrieval-augmented generation over local documents with per-namespace
-  vector indexes, BM25 keyword indexes, page-level PDF citations, and hybrid
+- Add retrieval-augmented generation with page-level PDF citations and hybrid
   fusion for better recall.
 - Add an ERP-style inventory domain that demonstrates realistic business
   workflows over JSON data without introducing an ORM.
 - Practise Human-in-the-Loop with LangGraph interrupts, resume, argument editing,
   approval/rejection, checkpoint persistence, and idempotent side effects.
-- Add a FastAPI backend and frontend later without restructuring the core.
+- Ship one service with three presentations, not three copies of the logic.
 
 ## Tech Stack
 
 | Technology                        | Purpose                                  |
 | --------------------------------- | ---------------------------------------- |
 | **Python**                        | Primary language                         |
-| **LangChain**                     | LLM application development              |
-| **LangGraph**                     | Graph-based workflow orchestration       |
-| **LangGraph SQLite Checkpointer** | Conversation state persistence           |
-| **LangSmith**                     | Tracing and observability                |
+| **LangChain / LangGraph**         | LLM application and graph orchestration  |
+| **PostgreSQL 18**                 | Threads, notes, documents, chunks, checkpoints |
+| **pgvector**                      | Embedding column + HNSW index            |
+| **LangGraph Postgres Checkpointer** | Conversation state persistence         |
 | **OpenAI**                        | Chat models and `text-embedding-3-small` embeddings |
-| **FAISS**                         | One vector index per namespace (RAG)     |
-| **rank-bm25**                     | BM25 keyword index over document chunks  |
+| **rank-bm25**                     | Keyword index over document chunks       |
 | **pypdf**                         | PDF text extraction (no OCR)             |
-| **Pydantic / pydantic-settings**  | Configuration loading and validation     |
-| **Rich**                          | Terminal panels, tables, Markdown, color |
-| **prompt_toolkit**                | Input, autocomplete, history, shortcuts  |
-| **SQLite**                        | Threads, notes, document text/metadata, checkpoints |
-| **JSON inventory dataset**        | ERP demo system of record (atomic writes, no ORM) |
-| **LangGraph interrupts**          | HITL approval, argument editing, and resume |
-| **uv**                            | Package and project management           |
-| **FastAPI / Uvicorn**             | REST API presentation layer over the same services |
-| **pytest**                        | Automated tests (no OpenAI calls)        |
+| **FastAPI / Uvicorn**             | REST API over the same services          |
+| **Next.js 16 / React 19 / TypeScript** | Web application                     |
+| **Tailwind CSS 4**                | Styling                                  |
+| **TanStack Query / Zustand**      | Server state and UI state                |
+| **Pydantic / pydantic-settings**  | Configuration and validation             |
+| **Rich / prompt_toolkit**         | Terminal presentation                    |
+| **uv / pnpm**                     | Python and Node package management       |
+| **pytest / Vitest**               | Automated tests (no network calls)       |
 
 ## Project Structure
 
 ```text
 agentic-chatbot/
-├── ARCHITECTURE.md              # Detailed architecture and FastAPI migration plan
+├── ARCHITECTURE.md              # How the system is built
+├── API.md                       # REST contract
+├── POSTGRES.md                  # Database, migration, pgvector
+├── COMMAND-PARITY.md            # CLI commands vs. web, and exclusions
+├── REVISED-ROADMAP.md           # Sprint plan and verification log
+├── HITL.md                      # Human-in-the-loop design
 ├── README.md
-├── pyproject.toml
-├── uv.lock
+├── main.py                      # `fastapi dev` entry point
+├── pyproject.toml / uv.lock
 ├── .env.example
-├── chatbot_memory.db            # SQLite: thread metadata + LangGraph checkpoints
-├── docs/                        # Documents indexed by /ingest + HITL.md
+├── docs/                        # Documents indexed by the RAG tools
 ├── inventory-data/              # ERP demo dataset + pristine seed
-├── data/faiss/                  # One FAISS index file per namespace
 │
-├── src/
-│   └── agentic_chatbot/
-│       ├── __init__.py          # Exposes main() for the console script
-│       ├── __main__.py          # python -m agentic_chatbot entry point
-│       ├── config.py            # settings + LangSmith env export
-│       ├── container.py         # Composition root (wires all resources)
-│       ├── llm.py               # ChatOpenAI factory
-│       ├── embeddings.py        # OpenAIEmbeddings factory
-│       ├── loaders.py           # text/Markdown/PDF -> page-aware sections
-│       ├── vector_store.py      # per-namespace FAISS indexes
-│       ├── bm25_store.py        # per-namespace BM25 indexes (rebuilt from SQLite)
-│       ├── rrf.py               # Reciprocal Rank Fusion
-│       ├── database.py          # SQLite connection + schema
-│       ├── models.py            # Thread, Note, Document, TurnEvent dataclasses
-│       ├── repository.py        # Thread, Notes, and Documents repositories
-│       │
-│       ├── cli/                 # Terminal presentation (Rich + prompt_toolkit)
-│       │   ├── __init__.py      # public exports: main, run_session, dispatch
-│       │   ├── theme.py         # design system: emerald palette + surfaces
-│       │   ├── glyphs.py        # terminal-safe symbol fallback
-│       │   ├── background.py    # emerald grid + neural-node decoration
-│       │   ├── console.py       # Rich rendering (hero, messages, commands)
-│       │   ├── chat.py          # streaming turns + tool timing + status
-│       │   ├── commands.py      # single command table + handlers + dispatch
-│       │   ├── registry.py      # Command record, lookup, fuzzy matching
-│       │   ├── session.py       # per-run state shared by handlers
-│       │   ├── input.py         # framed prompt + prompt_toolkit completion
-│       │   └── app.py           # interactive loop + main()
-│       │
-│       ├── graph/
-│       │   ├── state.py         # ChatState
-│       │   ├── nodes.py         # chat node
-│       │   ├── approval.py      # HITL interrupt node + routing + tokens
-│       │   └── workflow.py      # compiled LangGraph (chat ⇄ tools/approval)
-│       ├── services/
-│       │   ├── chat_service.py   # streaming turns, history, resume
-│       │   ├── thread_service.py # thread lifecycle
-│       │   ├── title_service.py  # automatic titles
-│       │   └── document_service.py # ingestion, chunking, retrieval
-│       ├── inventory/            # ERP domain (JSON, no ORM)
-│       │   ├── data_access.py    # locked, validated, atomic JSON store
-│       │   ├── validation.py     # dataset integrity checks
-│       │   ├── service.py        # business rules and workflows
-│       │   ├── approvals.py      # sensitive tool policy
-│       │   └── tools/            # 54 grouped inventory tools
-│       └── tools/
-│           ├── builtin.py        # calculator, get_current_time
-│           ├── utilities.py      # local helpers (hash, base64, units, ...)
-│           ├── life.py           # loan, tip, BMI, age, timezone, fuel
-│           ├── notes.py          # database-backed note tools
-│           ├── documents.py      # search_documents / list_documents
-│           ├── mocks.py          # mocked API tools (weather, search, ...)
-│           └── registry.py       # STATIC_TOOLS / get_tools(...)
+├── src/agentic_chatbot/
+│   ├── config.py                # settings (backend, JWT, CORS, RAG)
+│   ├── container.py             # composition root: one place that wires everything
+│   ├── sql_backend.py           # one SQL dialect over SQLite *or* Postgres
+│   ├── database.py              # SQLite connection + schema
+│   ├── postgres.py              # Postgres connection + schema
+│   ├── postgres_schema.py       # tables, indexes, pgvector DDL
+│   ├── pg_vector_store.py       # embeddings: pgvector with array fallback
+│   ├── vector_store.py          # FAISS store (SQLite backend only)
+│   ├── bm25_store.py            # BM25 index, rebuilt from SQL rows
+│   ├── repository.py            # thread/notes/document repositories
+│   ├── migrate_to_postgres.py   # one-shot, idempotent data migration
+│   ├── models.py                # domain dataclasses
+│   │
+│   ├── api/                     # REST presentation
+│   │   ├── main.py              # create_app factory + middleware
+│   │   ├── security.py          # JWT issue/verify, API-key exchange
+│   │   ├── dependencies.py      # auth, container, settings dependencies
+│   │   ├── routers/             # health, auth, chat, threads, approvals,
+│   │   │                        #   documents, tools
+│   │   └── schemas/             # strict request/response models
+│   │
+│   ├── cli/                     # terminal presentation (Rich + prompt_toolkit)
+│   ├── graph/                   # LangGraph state, nodes, approval, workflow
+│   ├── services/                # chat, thread, title, document
+│   ├── inventory/               # ERP domain (JSON, no ORM), 54 tools
+│   └── tools/                   # the remaining tool groups
 │
-├── tests/                       # Pytest suite (fakes + temporary SQLite)
-├── notebooks/                   # Learning notebooks
-└── data/                        # Local database + FAISS index files
+├── frontend/                    # Next.js single-page application
+│   └── src/
+│       ├── app/                 # routes; (dashboard) holds the app shell
+│       ├── components/          # layout, UI primitives
+│       ├── features/            # chat, threads, documents, approvals,
+│       │                        #   commands, nav, auth
+│       ├── lib/api/             # the single HTTP client + SSE parser
+│       └── stores/              # Zustand UI state
+│
+└── tests/                       # pytest suite (and frontend/ has Vitest)
+```
+
+## Quick start
+
+```bash
+# 1. Database. PostgreSQL is the default backend.
+createdb bayazid
+psql bayazid -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+# 2. Configure
+cp .env.example .env        # set OPENAI_API_KEY, API_KEYS, JWT_SECRET_KEY
+
+# 3. Run the API and the web app
+uv run fastapi dev          # http://127.0.0.1:8000
+cd frontend && pnpm install && pnpm dev   # http://localhost:3000
+
+# …or use the CLI instead of the API
+uv run agentic-chatbot
+```
+
+Migrating an existing SQLite installation:
+
+```bash
+uv run python -m agentic_chatbot.migrate_to_postgres \
+    --sqlite chatbot_memory.db --dsn "$POSTGRES_DSN" --checkpoints --vectors
+```
+
+## Tests
+
+```bash
+uv run pytest                                   # backend (no network calls)
+TEST_POSTGRES_DSN=postgresql://... uv run pytest # also runs the Postgres suites
+cd frontend && pnpm test && pnpm typecheck && pnpm lint
 ```
 
 ## Architecture Summary
 
-The application follows a one-way dependency flow:
+One-way dependency flow, with three presentations over the same core:
 
 ```text
-cli/  →  container.py  →  services  →  graph / repository / retrieval  →  SQLite + FAISS
+cli/  api/  frontend/  →  services  →  graph / repository / retrieval  →  PostgreSQL
 ```
 
-- **Presentation** (`cli/`) — reads input and renders output only. No
-  conversation logic, SQL, or graph code lives here.
+- **Presentation** — `cli/` (terminal), `api/` (REST), `frontend/` (web app). Each
+  reads input and renders output only. No conversation logic, SQL, or graph code
+  lives in any of them.
 - **Services** (`services/`) — chat orchestration, thread lifecycle, titles, and
   document ingestion/retrieval. Independent of any UI or HTTP framework.
-- **Graph** (`graph/`) — LangGraph state, the chat node, the `ToolNode`, the
-  HITL `approval` node, and the compiled chatbot.
+- **Graph** (`graph/`) — LangGraph state, the chat node, the `ToolNode`, the HITL
+  `approval` node, and the compiled chatbot.
 - **Inventory** (`inventory/`) — JSON store, dataset validation, ERP business
-  rules, sensitive-tool policy, and 54 grouped tools. It is independent of the
-  CLI and of the graph; the graph receives callbacks, not inventory imports.
-- **Retrieval** (`loaders.py`, `vector_store.py`, `bm25_store.py`, `rrf.py`,
-  `embeddings.py`) — text/PDF loading, chunk embeddings with one FAISS index per
-  namespace, BM25 keyword indexes over the same SQLite chunks, and RRF fusion of
-  the two rankings.
+  rules, sensitive-tool policy, and 54 grouped tools. Independent of the
+  presentations and of the graph, which receives callbacks rather than imports.
+- **Retrieval** — `loaders.py`, `embeddings.py`, `pg_vector_store.py`,
+  `bm25_store.py`, `rrf.py`. Embeddings live in PostgreSQL with an HNSW index;
+  BM25 is built in memory from SQL rows; RRF fuses the two rankings.
 - **Tools** (`tools/`) — `@tool` implementations registered in `registry.py` and
-  executed by LangGraph's `ToolNode`/approval node, including `search_documents`
-  and the inventory tool set.
-- **Persistence** (`repository.py`, `database.py`) — thread, note, and document
-  metadata/text SQL. Vectors are not stored in SQLite. The inventory dataset is a
-  separate JSON file, not a SQLite concern.
-- **Checkpointer** — `SqliteSaver` stores conversation messages and graph state.
-- **Container** (`container.py`) — builds and owns the SQLite connection,
-  checkpointer, LLM, embeddings, vector store, document service, tool-bound LLM,
-  compiled graph, and services.
+  executed by LangGraph, including `search_documents` and the inventory set.
+- **Persistence** — `repository.py` writes one portable SQL dialect through
+  `sql_backend.py`, which targets SQLite or PostgreSQL. `postgres_schema.py` owns
+  the tables, indexes, and pgvector DDL; `database.py` is the SQLite equivalent.
+- **Checkpointer** — `PostgresSaver` (or `SqliteSaver` on the SQLite backend)
+  stores conversation messages and graph state, on the same connection as the
+  relational data.
+- **Container** (`container.py`) — the single place that builds and owns the
+  connection, checkpointer, LLM, embeddings, vector store, document service,
+  tool-bound LLM, compiled graph, and services.
 
-`ARCHITECTURE.md` explains each module, the request flow, the streaming event
-contract, and the exact steps to add FastAPI later.
+`ARCHITECTURE.md` explains each module, the request flow, and the streaming event
+contract.
 
 ## Installation
 
@@ -210,7 +232,13 @@ OPENAI_API_KEY=your_openai_api_key
 Optional (defaults shown):
 
 ```env
+# Storage backend: "postgres" (default) or "sqlite" for offline use.
+DATABASE_BACKEND=postgres
+POSTGRES_DSN=postgresql://postgres:postgres@127.0.0.1:5432/bayazid
+
+# Only used when DATABASE_BACKEND=sqlite
 DATABASE_PATH=chatbot_memory.db
+
 LLM_MODEL=gpt-4o-mini
 LLM_TEMPERATURE=0.0
 SYSTEM_PROMPT=You are a helpful AI assistant.
@@ -271,13 +299,16 @@ LANGSMITH_ENDPOINT=https://api.smith.langchain.com
 
 Notes:
 
-- `DATABASE_PATH` defaults to `chatbot_memory.db` in the current directory.
-- An existing `chatbot_memory.db` is reused as-is; the schema matches previous
-  versions of the project.
-- `INVENTORY_DATA_PATH` is cwd-relative. If the file is missing, the CLI still
+- `DATABASE_BACKEND` selects the store. PostgreSQL is the default; `sqlite` needs
+  no server and is what the test suite uses.
+- With Postgres, `POSTGRES_DSN` is required and the schema is created on first
+  start. See [`POSTGRES.md`](./POSTGRES.md).
+- `DATABASE_PATH` only applies to the SQLite backend. An existing
+  `chatbot_memory.db` is reused as-is.
+- `INVENTORY_DATA_PATH` is cwd-relative. If the file is missing, the app still
   starts and logs a warning; inventory tools are simply not registered.
-- `INVENTORY_OPERATOR_ID` maps the reviewer at the CLI to an employee in the audit
-  trail (default: Shirin Sultana, Finance Controller). An unknown ID falls back to
+- `INVENTORY_OPERATOR_ID` maps the reviewer to an employee in the audit trail
+  (default: Shirin Sultana, Finance Controller). An unknown ID falls back to
   `HUMAN_OPERATOR` and logs a warning.
 - `INVENTORY_OPERATION_LOG_LIMIT` and `INVENTORY_AUDIT_LOG_LIMIT` keep only the
   newest log entries; older entries are dropped, not archived.
@@ -469,17 +500,61 @@ documents.
 
 ### Notes and limitations
 
-- **One worker.** The container holds one SQLite connection, one `SqliteSaver`,
-  in-process FAISS/BM25 caches, and the single-writer inventory JSON. Run
-  `uvicorn` with a single worker; multi-worker needs a connection pool or Postgres.
+- **One worker — on either backend.** With Postgres the *database* can serve
+  multiple processes, but the rest of the process is still per-instance: the
+  BM25 corpus is built in memory, and the inventory JSON is a single writer. Run
+  one `uvicorn` worker per container and scale there only after moving those into
+  the database.
 - `GET /api/v1/approvals` reads state once per thread (O(threads)).
 - API keys are operator identities, not a user-management system: no refresh
-  tokens, no rate limiting, no HTTPS termination. Do not expose this directly to
-  the internet.
+  tokens, no rate limiting, no HTTPS termination. Terminate TLS in front of it
+  (ALB, CloudFront, or nginx) and keep the service on a private network.
+- Set `API_ENV=production` in a deployment: that disables `/docs`, `/redoc`, and
+  `/openapi.json`, and refuses to start with a placeholder `JWT_SECRET_KEY`.
 - On Windows, `uvicorn[standard]`'s `httptools`/`uvloop` wheels have crashed
   (`0xC0000005`); pass `http="h11"` if that happens.
 
 See `FASTAPI-SPRINTS.md` for how the work was sequenced and what was verified.
+
+## Deploying
+
+Two processes, one database.
+
+```
+browser ──HTTPS──▶ CDN / ALB ──▶ Next.js (BFF)  ──HTTP──▶ FastAPI ──▶ PostgreSQL + pgvector
+```
+
+The browser never talks to FastAPI directly: every call goes through the Next.js
+BFF (`/api/backend/*`), which attaches the bearer token from an HttpOnly cookie.
+That is what keeps the JWT out of client JavaScript.
+
+**Required for a real deployment:**
+
+| Setting | Why |
+| --- | --- |
+| `API_ENV=production` | disables `/docs`, `/redoc`, `/openapi.json`; refuses a placeholder JWT secret |
+| `JWT_SECRET_KEY` | a real random value — `python -c "import secrets;print(secrets.token_urlsafe(48))"` |
+| `API_KEYS` | operator identities, e.g. `alice=<long-random-string>` |
+| `POSTGRES_DSN` | point at RDS/Cloud SQL, not localhost |
+| `CORS_ORIGINS` | the exact web origin; never `*` with credentials enabled |
+| `SESSION_COOKIE_SECURE=true` | so the session cookie is only sent over HTTPS |
+| `OPENAI_API_KEY` | chat and embeddings |
+
+**Checklist:**
+
+1. Managed PostgreSQL with the `vector` extension available. On RDS this is
+   supported; enable it and run `CREATE EXTENSION IF NOT EXISTS vector;` once.
+2. Run the API and the web app as separate services. Each container runs **one**
+   uvicorn worker (see the limitations above).
+3. Terminate TLS at the edge and set `x-forwarded-proto: https`, so the API
+   emits HSTS and the cookie is marked `Secure`.
+4. Health checks: `/health` (liveness) and `/health/ready` (readiness — verifies
+   the database, graph, vector store, and configuration).
+5. Do not bake `.env` into an image; inject secrets from the platform's secret
+   manager.
+
+The frontend already sets a CSP, `X-Frame-Options`, `X-Content-Type-Options`,
+`Referrer-Policy`, and `Permissions-Policy`, and removes `X-Powered-By`.
 
 ## The Terminal Interface
 
@@ -1066,28 +1141,34 @@ not from the `Settings` object. `get_settings()` therefore exports the
 `uv run python -m agentic_chatbot`. Values already present in the OS environment
 are not overwritten.
 
-## SQLite Persistence
+## Persistence
 
-One SQLite database holds four independent concerns:
+One database holds four independent concerns. Which database is chosen by
+`DATABASE_BACKEND`; the schema is identical apart from engine-specific types, and
+the repositories are written once against `sql_backend.py`.
 
-1. **Thread metadata** — the `threads` table (`thread_id`, `title`,
+1. **Thread metadata** — the `threads` table (`thread_id`, `title`, `owner_id`,
    `created_at`, `updated_at`), managed by `ThreadRepository`.
 2. **Notes** — the `notes` table (`note_id`, `thread_id`, `title`, `content`,
    `created_at`), managed by `NotesRepository`. Notes survive restarts and are
    private to the conversation that created them.
-3. **Knowledge base** — the `documents` and `document_chunks` tables hold
-   document text and metadata, and `rag_meta` records the embedding dimension.
-   Vectors are **not** in SQLite: each namespace has its own FAISS index under
-   `RAG_INDEX_PATH` (`data/faiss/`), keyed by `document_chunks.row_id`. The BM25
-   index is in memory only and derived from `document_chunks`, so SQLite remains
-   the single source of truth for chunk text.
-4. **Conversation state** — LangGraph checkpoint tables created and managed by
-   `SqliteSaver.setup()`. Pending HITL approvals live here too, which is why they
-   survive a restart.
+3. **Knowledge base** — `documents` and `document_chunks` hold document text and
+   metadata; `rag_meta` records the embedding dimension. On PostgreSQL the
+   embedding lives in `document_chunks.embedding_vec` (`vector(1536)`) with an
+   HNSW index. The BM25 index is in memory only and derived from
+   `document_chunks`, so the database remains the single source of truth for
+   chunk text.
+4. **Conversation state** — LangGraph checkpoint tables, created and managed by
+   `PostgresSaver.setup()` (or `SqliteSaver` on the SQLite backend). Pending HITL
+   approvals live here too, which is why they survive a restart.
 
-The inventory dataset is deliberately **not** in SQLite. It is one JSON document
-(`INVENTORY_DATA_PATH`) with atomic writes, whole-dataset validation, and a
-process lock. This keeps the ERP exercise inspectable and easy to reset without
+On the SQLite backend, vectors live in per-namespace FAISS files under
+`RAG_INDEX_PATH` instead of a column. The `PgVectorStore` interface is the same,
+so nothing above the repository layer changes.
+
+The inventory dataset is deliberately **not** in the database. It is one JSON
+document (`INVENTORY_DATA_PATH`) with atomic writes, whole-dataset validation, and
+a process lock. This keeps the ERP exercise inspectable and easy to reset without
 introducing a schema or ORM. See `inventory-data/README.md`.
 
 Deleting a thread removes its checkpoints first, then its metadata. Deleting a

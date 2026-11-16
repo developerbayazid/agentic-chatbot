@@ -71,7 +71,7 @@ export function CommandMenu({
       aria-label="Slash commands"
       className="mb-2 overflow-hidden rounded-card border border-border bg-background shadow-sm"
     >
-      <ul ref={listRef} className="max-h-72 overflow-y-auto py-1">
+      <ul ref={listRef} className="scroll-area max-h-72 overflow-y-auto py-1">
         {commands.map((command, index) => {
           const active = index === activeIndex;
           const planned = command.availability === "planned";

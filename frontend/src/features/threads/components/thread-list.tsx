@@ -101,7 +101,7 @@ export function ThreadList() {
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
+      <div className="scroll-area min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
         {isLoading && (
           <div className="space-y-1 p-1">
             <Skeleton className="h-6" />

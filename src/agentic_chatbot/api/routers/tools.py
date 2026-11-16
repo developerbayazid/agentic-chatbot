@@ -10,6 +10,9 @@ turn, and sensitive tools still require human approval.
 
 from __future__ import annotations
 
+import threading
+from typing import Any
+
 from fastapi import APIRouter
 
 from agentic_chatbot.api.dependencies import ContainerDep, CurrentUserDep
@@ -62,13 +65,7 @@ def list_tools(user: CurrentUserDep, container: ContainerDep) -> ToolListRespons
     ``requires_approval`` reflects the server's real sensitive-tool policy, not a
     UI assumption, so the list cannot drift from the gate that enforces it.
     """
-    inventory_service = container.inventory_service
-    inventory_names: set[str] = set()
-
-    if inventory_service is not None:
-        from agentic_chatbot.inventory.tools import create_inventory_tools
-
-        inventory_names = {tool.name for tool in create_inventory_tools(inventory_service)}
+    inventory_names = _inventory_tool_names(container)
 
     tools = [
         ToolInfo(
@@ -82,3 +79,40 @@ def list_tools(user: CurrentUserDep, container: ContainerDep) -> ToolListRespons
     tools.sort(key=lambda item: (item.category, item.name))
 
     return ToolListResponse(count=len(tools), tools=tools)
+
+
+# Cached on the container rather than in a module-level dict: the container owns
+# the inventory service, so the cache lifetime matches it exactly and a replaced
+# container (tests, reloads) cannot inherit a stale entry.
+_CACHE_ATTRIBUTE = "_tool_catalog_inventory_names"
+_CACHE_LOCK = threading.Lock()
+
+
+def _inventory_tool_names(container: Any) -> set[str]:
+    """Names of tools that come from the inventory service.
+
+    `create_inventory_tools` constructs 54 Pydantic schemas — about 150 ms — and
+    the result cannot change while the process runs, so it is computed once.
+    """
+    inventory_service = getattr(container, "inventory_service", None)
+
+    if inventory_service is None:
+        return set()
+
+    cached = getattr(container, _CACHE_ATTRIBUTE, None)
+
+    if cached is not None:
+        return cached
+
+    with _CACHE_LOCK:
+        # Re-check under the lock: two concurrent first requests would otherwise
+        # both build the schemas.
+        cached = getattr(container, _CACHE_ATTRIBUTE, None)
+
+        if cached is None:
+            from agentic_chatbot.inventory.tools import create_inventory_tools
+
+            cached = {tool.name for tool in create_inventory_tools(inventory_service)}
+            setattr(container, _CACHE_ATTRIBUTE, cached)
+
+        return cached

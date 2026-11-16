@@ -38,15 +38,16 @@ def _truncate(dsn: str) -> None:
 
     connection = create_connection(dsn)
 
+    # Reset before applying the schema: `init_schema` refuses a stored dimension
+    # that disagrees with this suite's, and another test file may have run with a
+    # different size. Dropping the vector column too lets it be recreated at the
+    # right width.
     with connection.cursor() as cursor:
         cursor.execute("SELECT to_regclass('rag_meta') AS found")
         has_schema = cursor.fetchone()["found"] is not None
 
         if has_schema:
             cursor.execute("DELETE FROM rag_meta WHERE key = 'embedding_dimensions'")
-
-            # Drop any pgvector column left at another test file's dimension, so
-            # `init_schema` recreates it at this suite's size.
             cursor.execute(
                 "ALTER TABLE document_chunks DROP COLUMN IF EXISTS embedding_vec"
             )

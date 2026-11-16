@@ -305,8 +305,8 @@ plan, since they migrate the CLI's persistence too.
 | 5 — PostgreSQL foundation | **done — verified** |
 | 6 — pgvector & hybrid search | **done — pgvector installed and in use** |
 | 7 — Migration verification | **done** |
-| 8 — Security/performance/reliability | not started |
-| 9 — Final verification | not started |
+| 8 — Security/performance/reliability | **done — verified** |
+| 9 — Final verification | **done — verified** |
 
 ### Sprint 1 verification
 
@@ -570,6 +570,82 @@ precision (0.6000000238 for 0.6). The parity test's tolerance was loosened from
 
 Local cleanup: `chatbot_memory.db` and `data/faiss/` were deleted at the user's
 request, after copying both into the session scratchpad as a rollback path.
+
+### Sprints 8–9 — hardening and final verification
+
+Three reported UI defects, all reproduced in a real browser before being fixed:
+
+1. **The Tools page showed no tools.** Not an API problem — the endpoint returned
+   all 91. `<main>` was `overflow-hidden`, so a page taller than the viewport was
+   clipped and the rows were never reachable. `main` now scrolls.
+2. **A scrollbar appeared beside the send button.** A global
+   `* { scrollbar-width: thin }` rule applied a track to the composer's textarea.
+   Scrollbar styling is now opt-in via `.scroll-area`, and textareas hide theirs.
+3. **Navigation was not reliably client-side.** During diagnosis a *dev* server
+   was found still holding port 3000 alongside the production build, serving
+   development bundles with broken HMR — so hydration failed and pages never
+   became interactive. After a clean `rm -rf .next` + production build, hydration
+   is confirmed and navigation no longer reloads the document.
+
+How these were verified matters: headless Chrome over CDP, asserting the rendered
+DOM rather than SSR HTML. That is what distinguishes "91 rows on screen" from
+"91 rows in the payload". The final run reports 91 rows, `scrollHeight 6558 >
+clientHeight 802`, `scrollbarWidth: none`, and a surviving `window` marker across
+navigation — i.e. no reload.
+
+Security audit (Sprint 8):
+
+| Check | Result |
+| --- | --- |
+| Cross-user thread read / delete | **404** for both — IDs stay unguessable |
+| Secret/path leakage in responses | none across 7 endpoints |
+| Oversized / wrong-type / extra-field input | **422** each |
+| Unauthenticated access | 401 on every route |
+| Security headers | were **absent** — now set on both services |
+
+The missing headers were the one genuine finding: no `X-Content-Type-Options`,
+`X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, or HSTS. Added to the
+API middleware and to `next.config.ts` (with a CSP), plus `poweredByHeader: false`.
+A CSP is the easiest thing to break hydration, so it was verified in-browser:
+**0 violations**, app still hydrated, SPA navigation still working.
+
+Performance:
+
+| Endpoint | Before | After |
+| --- | --- | --- |
+| `GET /api/v1/tools` | 180 ms | **24 ms** |
+
+The endpoint rebuilt 54 Pydantic tool schemas on every request. Cached on the
+container, which bounds the lifetime correctly and cannot leak across tests.
+
+Bugs found and fixed:
+
+- **Test isolation, twice.** A `vector(N)` column created by the 4-dimension tests
+  leaked into 1536-dimension suites (`expected 4 dimensions, not 1536`), and the
+  reverse ordering failed too. Each Postgres test file now resets the dimension
+  row *and* the vector column **before** applying the schema, since `init_schema`
+  refuses a mismatch. Verified stable in both orders.
+- A typecheck error in a new test: the `s` regex flag is unavailable at this
+  target, so the assertion was rewritten without it.
+
+Final gates:
+
+| Gate | Result |
+| --- | --- |
+| Backend, Postgres + pgvector | **744 passed** |
+| Backend, SQLite | **716 passed, 28 skipped** |
+| Frontend | **106 passed** · typecheck clean · lint clean · build exit 0 |
+| Browser | 91 tools, no clipped page, no composer scrollbar, SPA navigation |
+
+One flake worth naming: `pnpm test` intermittently dies with `0xC0000005` — the
+known native crash on this Windows/Node combination, unrelated to the code. A
+retry passes; CI on Linux is unaffected.
+
+Documentation updated for the deployment: `README.md` now describes the three
+presentations and PostgreSQL instead of a CLI-only SQLite app, and carries a
+deployment checklist; `ARCHITECTURE.md` gained §10b on the web application and a
+corrected persistence section; `POSTGRES.md` documents pgvector installation.
+
 
 
 

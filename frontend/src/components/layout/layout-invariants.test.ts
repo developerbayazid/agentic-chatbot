@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /**
@@ -80,5 +80,33 @@ describe("tools page", () => {
     expect(page).not.toMatch(/\.slice\(0,\s*\d+\)/);
     expect(page).toContain("catalog.data?.count");
     expect(page).toContain("groups.map");
+  });
+});
+
+describe("single-page routing", () => {
+  it("serves /chat and /chat/<id> from one client route", () => {
+    // A single optional catch-all so switching conversations (and creating one)
+    // updates the URL without remounting the view, which would drop the streamed
+    // reply and force a refetch.
+    const page = read("app/(dashboard)/chat/[[...threadId]]/page.tsx");
+
+    expect(page).toContain('"use client"');
+    expect(page).toContain("useParams");
+  });
+
+  it("never awaits `params` in a server component", () => {
+    // This was the reported defect: an `async` page awaiting `params` forced a
+    // server round-trip per navigation, and Next logged
+    // "encountered URL data during prerendering or a navigation".
+    const page = read("app/(dashboard)/chat/[[...threadId]]/page.tsx");
+
+    expect(page).not.toContain("await params");
+    expect(page).not.toMatch(/export default async function/);
+  });
+
+  it("does not keep the old per-segment chat routes", () => {
+    // Both would shadow or conflict with the consolidated route.
+    expect(existsSync(join(ROOT, "app/(dashboard)/chat/page.tsx"))).toBe(false);
+    expect(existsSync(join(ROOT, "app/(dashboard)/chat/[threadId]"))).toBe(false);
   });
 });

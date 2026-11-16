@@ -55,6 +55,28 @@ export function ConversationView({ threadId }: { threadId: string | null }) {
   const [notice, setNotice] = useState<string | null>(null);
   const commands = useCommands(threadId, setNotice);
 
+  // The route is a single client component now, so switching conversations no
+  // longer remounts this view. Without clearing, the previous thread's streamed
+  // text, tool rows, and notice would leak into the conversation just opened.
+  //
+  // Creation is excluded on purpose: a new chat changes the URL from `/chat` to
+  // `/chat/<id>` once its first message resolves, and that turn *belongs* to the
+  // thread now in the URL. Only a change between two existing threads clears.
+  const streamReset = stream.reset;
+  const previousThread = useRef<string | null>(threadId);
+  useEffect(() => {
+    const previous = previousThread.current;
+
+    if (previous === threadId) return;
+
+    previousThread.current = threadId;
+
+    if (previous !== null && threadId !== null) {
+      streamReset();
+      setNotice(null);
+    }
+  }, [threadId, streamReset]);
+
   // Opening a conversation should land on its newest message with no animation.
   // `history.dataUpdatedAt` changes on every successful fetch, so this re-runs
   // when a different thread's messages arrive.

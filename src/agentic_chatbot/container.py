@@ -172,11 +172,25 @@ def _create_checkpointer(connection: Any, settings: Settings) -> Any:
     if settings.database_backend == "postgres":
         from langgraph.checkpoint.postgres import PostgresSaver
 
+        from agentic_chatbot.postgres import connection_lock
+
         # `from_conn_string` opens its own connection, which would put graph
         # state in a different transaction from the repositories. Constructing
         # it directly keeps one connection, and therefore one lock and one
         # transaction, exactly as the SQLite path does.
-        return PostgresSaver(connection)
+        saver = PostgresSaver(connection)
+
+        # `PostgresSaver.__init__` installs its own `threading.Lock` — but it
+        # writes through the same psycopg connection as the repositories and
+        # the vector store, and a connection runs one command at a time. A
+        # second lock would let the checkpointer and a repository thread each
+        # believe they had exclusive use, which psycopg reports as "another
+        # command is already in progress" (and, on its pipeline path, "cannot
+        # enter pipeline mode, connection not idle"). Handing it the
+        # connection's lock is what makes those writes serialize.
+        saver.lock = connection_lock(connection)
+
+        return saver
 
     return SqliteSaver(connection)
 

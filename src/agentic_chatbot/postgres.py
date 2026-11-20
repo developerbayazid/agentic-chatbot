@@ -61,19 +61,29 @@ def run_outside_transaction(connection: Any, action: Any) -> Any:
     than make the whole connection autocommit — which would silently disable
     ``rollback()`` for the application's writes — autocommit is enabled only for
     the duration of setup.
+
+    Autocommit is a property of the *connection*, and this connection is shared
+    with the repositories, the vector store and the checkpointer. The switch is
+    therefore made while holding the connection's lock: otherwise another thread
+    could issue a statement between the commit and the restore and have it
+    silently auto-committed. The lock is reentrant, so an ``action`` that takes
+    it again (``PostgresSaver.setup`` does) still works.
     """
-    previous = connection.autocommit
+    lock = connection_lock(connection)
 
-    if previous:
-        return action()
+    with lock:
+        previous = connection.autocommit
 
-    connection.commit()  # close anything implicitly open
-    connection.autocommit = True
+        if previous:
+            return action()
 
-    try:
-        return action()
-    finally:
-        connection.autocommit = previous
+        connection.commit()  # close anything implicitly open
+        connection.autocommit = True
+
+        try:
+            return action()
+        finally:
+            connection.autocommit = previous
 
 
 _LOCKS: dict[int, threading.RLock] = {}

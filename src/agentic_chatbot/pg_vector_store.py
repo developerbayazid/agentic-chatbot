@@ -27,10 +27,10 @@ or vanish while the process runs.
 from __future__ import annotations
 
 import math
-import threading
 from collections.abc import Sequence
 from typing import Any
 
+from agentic_chatbot.postgres import connection_lock
 from agentic_chatbot.sql_backend import wrap
 
 
@@ -40,7 +40,14 @@ class PgVectorStore:
     def __init__(self, connection: Any, dimensions: int):
         self._connection = wrap(connection)
         self._dimensions = int(dimensions)
-        self._lock = threading.Lock()
+        # The repositories, the checkpointer and this store all share ONE
+        # psycopg connection, and a connection runs one command at a time.
+        # A lock of our own would therefore protect nothing: two threads
+        # holding different locks would each believe they had exclusive use
+        # and psycopg would fail with "another command is already in
+        # progress". The lock belongs to the connection, so every component
+        # must take the same one.
+        self._lock = connection_lock(connection)
         self._mode: str | None = None
 
     @property
@@ -134,9 +141,12 @@ class PgVectorStore:
         """
         try:
             column = self._column
-            self._connection.cursor().execute(
-                f"SELECT {column} FROM document_chunks LIMIT 0"
-            )
+
+            with self._lock:
+                self._connection.cursor().execute(
+                    f"SELECT {column} FROM document_chunks LIMIT 0"
+                )
+
             return True
         except Exception:  # noqa: BLE001 - an unreachable store is not ready
             return False
@@ -150,9 +160,10 @@ class PgVectorStore:
     def _detect_mode(self) -> str:
         """Use pgvector when the extension is installed, otherwise fall back."""
         try:
-            row = self._connection.cursor().execute(
-                "SELECT 1 AS present FROM pg_extension WHERE extname = 'vector'"
-            ).fetchone()
+            with self._lock:
+                row = self._connection.cursor().execute(
+                    "SELECT 1 AS present FROM pg_extension WHERE extname = 'vector'"
+                ).fetchone()
 
             if row is not None:
                 return "pgvector"

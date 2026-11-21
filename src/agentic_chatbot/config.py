@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     # LangSmith Observability
     langsmith_tracing: bool = False
     langsmith_api_key: str | None = None
-    langsmith_project: str = "agentic-chatbot"
+    langsmith_project: str = "agentic-chatbot-dev"
     langsmith_endpoint: str | None = None
 
     # REST API

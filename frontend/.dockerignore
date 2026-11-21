@@ -1,0 +1,43 @@
+# ===========================================================================
+# Docker build context — frontend image
+#
+# The Next.js image builds from this directory only, so the root .dockerignore
+# does not apply here. node_modules and .next are rebuilt inside the image;
+# shipping the host copies would be both huge and platform-hostile.
+# ===========================================================================
+
+# --- Dependencies and build output (reinstalled/rebuilt in the image) ------
+node_modules/
+**/node_modules/
+.next/
+out/
+build/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# --- Secrets ---------------------------------------------------------------
+# `.env.example` is kept because it documents the contract; the real files
+# are never in an image.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Version control and CI ----------------------------------------------
+.git/
+.github/
+.gitignore
+*.md
+!package.json
+
+# --- Editor and OS noise ---------------------------------------------------
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*

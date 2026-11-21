@@ -1,0 +1,81 @@
+# ===========================================================================
+# Docker build context — backend image
+#
+# Everything excluded here is either a local artefact, a secret, or runtime
+# state that is mounted as a volume instead of baked into the image. The build
+# context is what gets uploaded to the Docker daemon, so an over-inclusive
+# context is both slow and a leak risk: `.env` in particular must never be in
+# it, and `.gitignore` has no effect on the Docker build context.
+# ===========================================================================
+
+# --- Secrets ---------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Python virtualenvs and caches -----------------------------------------
+.venv/
+venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.tox/
+build/
+dist/
+*.egg-info/
+
+# --- Frontend (built by its own image, not this one) -----------------------
+frontend/
+node_modules/
+**/node_modules/
+
+# --- Tests and local tooling ----------------------------------------------
+tests/
+notebooks/
+.commandcode/
+
+# --- Version control and CI ----------------------------------------------
+.git/
+.gitignore
+.github/
+*.md
+!README.md
+
+# --- Runtime state: mounted as volumes, never baked in ---------------------
+# `data/` holds uploads and the SQLite fallback; `inventory-data/` is the
+# mutable ERP system of record; `docs/` is the RAG corpus mounted read-only.
+data/
+inventory-data/
+docs/
+
+# --- Local binaries, logs, editor noise -----------------------------------
+*.log
+logs/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# --- Deployment assets are not part of the application image --------------
+deploy/
+docker-compose.yml
+docker-compose*.yml
+aws.md

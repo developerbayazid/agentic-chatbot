@@ -36,6 +36,12 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // `standalone` emits a self-contained server bundle under `.next/standalone`
+  // with only the dependencies actually reached at runtime. The Docker image
+  // copies that instead of `node_modules`, which is several hundred megabytes
+  // smaller and keeps dev-only tooling out of production.
+  output: "standalone",
+
   cacheComponents: true,
   partialPrefetching: true,
 

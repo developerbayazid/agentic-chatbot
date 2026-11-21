@@ -2,7 +2,7 @@
 
 **Project:** BAYAZID AI / Agentic Chatbot (`D:\ai-engineering\agentic-chatbot-main`)
 **Brief:** `aws.md`
-**Status:** implementation in progress — Sprint 0 complete, awaiting verification.
+**Status:** implementation in progress — Sprint 1 complete, awaiting verification.
 
 ---
 
@@ -13,14 +13,85 @@ Legend: **DONE** · **IN PROGRESS** · **AWAITING VERIFY** · **PENDING** · **B
 | Sprint | Scope | State | Gate |
 |---|---|---|---|
 | 0 | Baseline hardening | **DONE** — awaiting your verification | ruff clean, 719 passed / 28 skipped |
-| 1 | Backend image | **PENDING** | needs Sprint 0 sign-off |
-| 2 | Frontend image | **PENDING** | needs Sprint 1 |
+| 1 | Backend image | **DONE** — awaiting your verification | 552 MB image, readiness 503-not-500, arm64 builds |
+| 2 | Frontend image | **PENDING** | needs Sprint 1 sign-off |
 | 3 | Local full-stack compose | **PENDING** | needs Sprint 2 |
 | 4 | CI workflow | **PENDING** | needs Sprint 3 |
 | 5 | Publish to Docker Hub | **PENDING** | needs Sprint 4 green on `main` |
 | 6 | AWS foundation (**billable**) | **PENDING** | needs explicit approval + §8 inputs |
 | 7 | Automated deployment | **PENDING** | needs Sprint 6 |
 | 8 | Backup, monitoring, runbook | **PENDING** | needs Sprint 7 |
+
+> **Revision note (Sprint 1).** Sprints 1–3 were written before the storage
+> migration in commit `b7cedd1`, which made PostgreSQL the only backend. Two
+> plan statements are now obsolete and were corrected here: there is no SQLite
+> fallback to test against, and `faiss-cpu` is gone (so R1's `faiss-cpu`
+> aarch64 concern no longer exists). Where this document and the code disagree,
+> the code wins.
+
+### Sprint 1 — completion record
+
+**State: DONE.** No AWS resource created. Cost: $0.
+
+Files created:
+- `/Dockerfile` — two-stage (`python:3.14-slim`), `uv sync --frozen --no-dev`,
+  non-root uid 10001, `HEALTHCHECK` on `/health` only, exactly one uvicorn
+  worker. Dependencies are installed in a layer above `src/`, so a code-only
+  change reuses the cached dependency layer. The runtime stage pre-creates
+  `data/uploads`, `inventory-data/inventory` and `docs` with the right owner so
+  a named volume inherits the ownership.
+
+Files modified:
+- `pyproject.toml` / `uv.lock` — **removed `streamlit`** (R7). It was declared
+  but never imported anywhere in `src/`, `tests/` or `main.py`. It pulled
+  altair, pandas, pyarrow and pydeck — roughly 85 MB of wheels — and its
+  install layer is where the Docker CLI was repeatedly faulting. `uv lock`
+  dropped 15 packages; imports and the full suite were re-verified afterwards.
+
+**Decisions taken during the sprint:**
+- **`HEALTHCHECK` checks `/health`, not `/health/ready`.** Verified: with
+  Postgres stopped, `/health` still returns 200 while `/health/ready` returns
+  503. The database is the same host as the app container in production, so a
+  readiness-based Docker healthcheck would mark a perfectly good application
+  container unhealthy during a DB blip and trigger a restart loop. Readiness is
+  the *deploy gate* (Sprint 7), which is where 503 belongs.
+- **`--progress=plain` for builds.** The default TUI build renderer crashed the
+  Docker CLI on Windows (`0xC0000005`) partway through downloading large
+  wheels. Plain output builds the same image and did not crash. This is a local
+  tooling issue, not a Dockerfile defect; CI on Linux is unaffected.
+
+**Verification performed (all gates from §6 Sprint 1):**
+
+| Gate | Result |
+|---|---|
+| Image builds | `bayazid-ai-backend:dev`, `sha256:6dd792d6…` |
+| Image size < ~800 MB | **552 MB** |
+| Runs as non-root | `uid=10001(app) gid=10001(app)` |
+| No `.env` in image | `ls /app/.env` → not found |
+| No secrets in layers | `docker history` has no key/secret/`.env` match |
+| Startup survives `CREATE INDEX CONCURRENTLY` | yes — `PostgresSaver.setup()` outside a transaction |
+| `/health` → 200 | yes: `{"status":"ok","application":"BAYAZID AI"}` |
+| `/health/ready` all-true vs `pgvector/pg18` | yes: `database, graph, storage, configuration` all true |
+| **Readiness is 503, not 500, with DB down** | **yes** — `503 {"status":"not_ready"}`, `database:false` |
+| Liveness stays 200 with DB down | yes — this is why Docker must not gate on readiness |
+| pgvector genuinely engaged | `embedding_vec` is `vector`; HNSW index `vector_cosine_ops` |
+| Dockerized DB matches dev | PostgreSQL **18.7**, pgvector **0.8.7** — identical to dev |
+| Serves the real API | `POST /api/v1/auth/token` 200; `/api/v1/tools` 200 (37 tools); `/api/v1/threads` 200 |
+| **R1: `linux/arm64` build** | **passes** — 95 packages, `psycopg-binary` aarch64 wheel; `--load` exit 0 |
+| `ruff check src tests` | *All checks passed!* |
+| `uv run pytest -q` | **726 passed** (0 skipped — the suite now needs Postgres) |
+
+**R1 outcome:** the gate asked whether cp314 aarch64 wheels exist before any
+`t4g` decision. They do — `linux/arm64` builds and loads. `faiss-cpu` is no
+longer a dependency, so the risk that motivated the gate is largely gone.
+`t4g` is **technically unblocked**, but the plan still specifies x86_64 first;
+that choice is unchanged.
+
+**Still outstanding, carried from Sprint 0 — needs a decision from you:**
+1. **Rotate the credentials in `.env`.** Unchanged and still true.
+2. **`LICENSE`.** Still absent; still blocks public Docker Hub (D3).
+
+---
 
 ### Sprint 0 — completion record
 
@@ -253,13 +324,13 @@ Each sprint ends with a written report (files changed, commands, results, cost i
 **Validate:** `uv run ruff check src tests` clean (or an explicit documented ignore baseline); `compileall` clean; **668 tests still pass**; `/health/ready` returns **503 not 500** with the DB stopped.
 **Output:** a repo that lints, tests, and reports readiness correctly.
 
-### Sprint 1 — Backend image ($0)
+### Sprint 1 — Backend image ($0) — **COMPLETE, see the record above**
 **Objective:** a production backend image that runs the verified app.
 **Create:** `/Dockerfile` (2-stage, `python:3.14-slim`, `uv sync --frozen --no-dev`, non-root uid 10001, `HEALTHCHECK` on `/health`), finish `/.dockerignore`.
 **AWS:** none. **Config:** `PYTHONUNBUFFERED=1`, `PYTHONDONTWRITEBYTECODE=1`; no secrets in ARG/ENV.
 **Security:** non-root, no `.env` copied, no build-arg secrets.
-**Risks — R1 (highest):** `faiss-cpu` / `psycopg[binary]` cp314 **aarch64** wheels. Gate: `buildx --platform linux/arm64` must succeed **before** any `t4g` choice; otherwise stay x86_64 and record why.
-**Validate:** image < ~800 MB; with SQLite settings `/health` → 200; with a `pgvector/pg18` sibling `/health/ready` all-true; `docker history` leaks nothing; runs as uid 10001; startup survives `CREATE INDEX CONCURRENTLY`.
+**Risks — R1 (highest):** aarch64 wheels. ~~`faiss-cpu`~~ is no longer a dependency; `psycopg[binary]` cp314 aarch64 resolves and `linux/arm64` builds cleanly. Gate still applies: `buildx --platform linux/arm64` must succeed **before** any `t4g` choice; otherwise stay x86_64 and record why.
+**Validate:** image < ~800 MB (**552 MB**); with a `pgvector/pg18` sibling `/health/ready` all-true (SQLite is gone, so the DB sibling is required); `docker history` leaks nothing; runs as uid 10001; startup survives `CREATE INDEX CONCURRENTLY`; readiness is 503-not-500 with the DB down.
 **Output:** `bayazid-ai-backend:dev` serving chat/stream/approvals/documents.
 
 ### Sprint 2 — Frontend image ($0)
@@ -341,13 +412,13 @@ Each sprint ends with a written report (files changed, commands, results, cost i
 
 | # | Risk | Sprint | Mitigation |
 |---|---|---|---|
-| R1 | cp314 **aarch64** wheels missing for `faiss-cpu`/`psycopg[binary]` | 1 | `buildx --platform linux/arm64` gate; fall back to x86_64 `t3` |
+| R1 | cp314 **aarch64** wheels missing | 1 | **Resolved** — `linux/arm64` builds; `faiss-cpu` removed by the storage migration |
 | R2 | pgvector image ≠ dev 0.8.7 / PG 18 | 3 | Pin tag, assert `extversion`, prove HNSW with `enable_seqscan=off` |
 | R3 | Volume permissions vs uid 10001 | 3 | Explicit `user:`/`chown`; test on a fresh volume |
 | R4 | First-query latency while BM25 rebuilds | 3, 7 | Warm via `/health/ready` + a post-deploy smoke query |
 | R5 | Build-time Google Fonts egress | 2, 4 | Allow egress in CI; fonts cached in the layer |
 | R6 | Free plan may restrict Elastic IP | 6 | Auto-IP + DNS updater fallback; document the trade-off |
-| R7 | `streamlit` dead dependency bloats the image | 1 | Optional removal as a **separate approved change** |
+| R7 | `streamlit` dead dependency bloats the image | 1 | **Done** — removed in Sprint 1; lock dropped 15 packages |
 | R8 | `t3` CPU-credit throttling on embedding bursts | 6 | Alarm on `CPUCreditBalance`; move to `t4g`/unlimited |
 | R9 | Seconds of 502 during recreate | 7 | Caddy retries + health-gated swap; state it plainly |
 | R10 | `CREATE INDEX CONCURRENTLY` vs concurrent `pg_dump` | 7 | Back up **before** recreate, never in parallel with startup |

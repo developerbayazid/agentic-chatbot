@@ -1,0 +1,167 @@
+# ===========================================================================
+# BAYAZID AI — local full-stack rehearsal (Sprint 3 of the AWS plan)
+#
+# This is the production topology from aws-deployment-ci-cd-plan.md §4, minus
+# Caddy and TLS (those arrive with deploy/docker-compose.prod.yml in Sprint 7):
+#
+#   browser -> frontend :3000 -> backend :8000 -> db :5432
+#
+# Deliberate choices:
+#   * Only the frontend is published (3000). 8000 and 5432 exist solely on the
+#     compose network — the plan's "never publish 5432" rule.
+#   * The database image is pinned to the exact dev version: PostgreSQL 18.7
+#     with pgvector 0.8.7. `pg18` / `latest` would move underneath us.
+#   * PostgreSQL 18 changed PGDATA to /var/lib/postgresql/18/docker and declares
+#     /var/lib/postgresql as its volume. Mounting the old
+#     /var/lib/postgresql/data would leave the real data directory outside the
+#     named volume, so `down` would silently discard every thread.
+#   * `inventory_data.json` is mutable runtime state. The named volume starts
+#     empty and the app refuses to start without the file, so `volume-init`
+#     seeds it from the tracked host copy exactly once. It also fixes volume
+#     ownership for uid 10001 (risk R3), because an empty named volume does not
+#     inherit the image directory's owner.
+#   * `docs/` is mounted read-only: the corpus is input, not state.
+#   * The backend gets `.env` for application secrets, but the compose DSN and
+#     API_ENV are injected explicitly and win over the file. `.env`'s
+#     POSTGRES_DSN points at 127.0.0.1 and would be wrong inside the network.
+#
+# Usage:
+#   docker compose up -d --build      # first run, or after a Dockerfile change
+#   docker compose up -d              # reuse the built images
+#   docker compose logs -f backend
+#   docker compose down               # keeps all three volumes
+#   docker compose down -v            # DESTROYS threads, uploads, inventory
+# ===========================================================================
+
+name: bayazid-ai
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # -------------------------------------------------------------------------
+  # PostgreSQL 18.7 + pgvector 0.8.7 — the exact versions used in development.
+  # -------------------------------------------------------------------------
+  db:
+    image: pgvector/pgvector:0.8.7-pg18-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: bayazid
+      POSTGRES_USER: bayazid
+      # Read by Compose from .env. Fail closed rather than invent a password:
+      # a default here would be copied into production by accident.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      # Checksums detect silent page corruption. Only honoured on first init.
+      POSTGRES_INITDB_ARGS: --data-checksums
+    volumes:
+      # PostgreSQL 18's own volume root — see the note at the top of the file.
+      - pgdata:/var/lib/postgresql
+      # Runs once on an empty pgdata: CREATE EXTENSION vector.
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bayazid -d bayazid"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging: *default-logging
+
+  # -------------------------------------------------------------------------
+  # One-shot: seed the inventory volume and fix ownership (risk R3).
+  #
+  # An empty named volume mounted over /app/inventory-data/inventory does not
+  # inherit the image directory's uid, and the app's InventoryDataStore refuses
+  # to start when inventory_data.json is absent. This runs as root, copies the
+  # tracked baseline only when the volume is empty, then hands both writable
+  # volumes to the backend's uid.
+  # -------------------------------------------------------------------------
+  volume-init:
+    image: alpine:3.22
+    restart: "no"
+    volumes:
+      - uploads:/uploads
+      - inventory:/inventory
+      - ./inventory-data/inventory:/seed:ro
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        if [ ! -f /inventory/inventory_data.json ]; then
+          echo "volume-init: seeding inventory from the tracked baseline"
+          cp /seed/inventory_data.json /inventory/inventory_data.json
+        else
+          echo "volume-init: inventory already present; leaving it untouched"
+        fi
+        chown -R 10001:10001 /uploads /inventory
+        echo "volume-init: uploads and inventory are owned by uid 10001"
+    logging: *default-logging
+
+  # -------------------------------------------------------------------------
+  # FastAPI backend — one uvicorn worker, as required (API.md §14).
+  # -------------------------------------------------------------------------
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bayazid-ai-backend:dev
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      volume-init:
+        condition: service_completed_successfully
+    env_file:
+      - .env
+    environment:
+      # Wins over .env: the database is the compose service `db`, not localhost.
+      POSTGRES_DSN: postgresql://bayazid:${POSTGRES_PASSWORD}@db:5432/bayazid
+      # Rehearse production: /docs and /redoc are disabled, and a placeholder
+      # JWT secret becomes a startup error rather than a silent default.
+      API_ENV: production
+      DOCS_PATH: docs
+      API_UPLOAD_PATH: data/uploads
+      INVENTORY_DATA_PATH: inventory-data/inventory/inventory_data.json
+    volumes:
+      - uploads:/app/data/uploads
+      - inventory:/app/inventory-data/inventory
+      - ./docs:/app/docs:ro
+    expose:
+      - "8000"
+    logging: *default-logging
+
+  # -------------------------------------------------------------------------
+  # Next.js standalone + BFF — the only container reachable from the host.
+  # -------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: bayazid-ai-frontend:dev
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      # Server-side only. The browser talks to Next, and Next proxies to the
+      # backend over the compose network — there are no NEXT_PUBLIC_* values.
+      BACKEND_API_URL: http://backend:8000
+      # Local rehearsal is plain HTTP. A Secure cookie would never be sent over
+      # http://, so login would appear to succeed and then silently not work.
+      SESSION_COOKIE_SECURE: "false"
+    ports:
+      - "3000:3000"
+    logging: *default-logging
+
+volumes:
+  # Database files. Never baked into an image.
+  pgdata:
+  # data/uploads/<subject>/<sha256>.<ext>
+  uploads:
+  # The mutable inventory JSON — the ERP system of record.
+  inventory:

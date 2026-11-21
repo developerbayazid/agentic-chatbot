@@ -1,24 +1,25 @@
 import json
-import sqlite3
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.memory import InMemorySaver
 
-from agentic_chatbot.database import init_schema
 from agentic_chatbot.graph.workflow import build_chatbot
 from agentic_chatbot.repository import NotesRepository
 from agentic_chatbot.tools.notes import create_note_tools
+from tests.pg import connect
 
 THREAD_A = {"configurable": {"thread_id": "thread-a"}}
 THREAD_B = {"configurable": {"thread_id": "thread-b"}}
 
 
-def _make_tools(database_path):
-    connection = sqlite3.connect(database_path, check_same_thread=False)
-    connection.row_factory = sqlite3.Row
-    init_schema(connection)
+def _make_tools(schema):
+    from agentic_chatbot.postgres import init_schema
 
+    connection = connect(schema)
+    # Each connection must initialise its own schema: without this the queries
+    # fall through `search_path` to the `public` tables.
+    init_schema(connection, embedding_dimensions=8)
     repository = NotesRepository(connection)
     tools = {
         note_tool.name: note_tool
@@ -28,8 +29,8 @@ def _make_tools(database_path):
 
 
 @pytest.fixture
-def note_context(tmp_path):
-    connection, repository, tools = _make_tools(tmp_path / "notes.db")
+def note_context(schema):
+    connection, repository, tools = _make_tools(schema)
 
     try:
         yield repository, tools
@@ -153,10 +154,8 @@ def test_graph_forwards_thread_id_to_note_tools(note_context):
     assert repository.list_all("thread-b") == []
 
 
-def test_notes_persist_across_connections(tmp_path):
-    database_path = tmp_path / "notes.db"
-
-    first_connection, _, first_tools = _make_tools(database_path)
+def test_notes_persist_across_connections(schema):
+    first_connection, _, first_tools = _make_tools(schema)
     saved = _call(
         first_tools,
         "save_note",
@@ -164,7 +163,7 @@ def test_notes_persist_across_connections(tmp_path):
     )
     first_connection.close()
 
-    second_connection, _, second_tools = _make_tools(database_path)
+    second_connection, _, second_tools = _make_tools(schema)
 
     try:
         listed = _call(second_tools, "list_notes", {})
@@ -173,39 +172,6 @@ def test_notes_persist_across_connections(tmp_path):
         )
     finally:
         second_connection.close()
-
-
-def test_init_schema_migrates_legacy_notes_table(tmp_path):
-    connection = sqlite3.connect(tmp_path / "legacy.db")
-    connection.execute(
-        """
-        CREATE TABLE notes (
-            note_id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            content TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """
-    )
-    connection.execute(
-        "INSERT INTO notes (note_id, title, content) "
-        "VALUES ('old', 'Old note', 'body')"
-    )
-    connection.commit()
-
-    init_schema(connection)
-
-    columns = {
-        row[1] for row in connection.execute("PRAGMA table_info(notes)")
-    }
-    legacy_thread = connection.execute(
-        "SELECT thread_id FROM notes WHERE note_id = 'old'"
-    ).fetchone()[0]
-
-    connection.close()
-
-    assert "thread_id" in columns
-    assert legacy_thread == ""
 
 
 def test_save_note_requires_title(note_context):

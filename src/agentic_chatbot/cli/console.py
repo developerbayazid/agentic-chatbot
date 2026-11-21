@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Iterable, Sequence
+from typing import TYPE_CHECKING
 
 from rich import box
 from rich.console import Console
@@ -45,7 +46,7 @@ class StatusSnapshot:
     """Safe-to-display runtime facts. Never carries secrets."""
 
     model: str
-    database_path: str
+    database_label: str
     database_ok: bool
     graph_ok: bool
     tracing_enabled: bool
@@ -223,7 +224,7 @@ def show_status_banner(
 
     facts: list[tuple[str, str]] = [("MODEL", status.model)]
     if show_database:
-        facts.append(("DATABASE", status.database_path))
+        facts.append(("DATABASE", status.database_label))
         facts.append(
             ("STORAGE", "connected" if status.database_ok else "unreachable")
         )
@@ -516,7 +517,7 @@ def error(console: Console, message: str) -> None:
 
 def show_help(
     console: Console,
-    commands: Sequence["Command"],
+    commands: Sequence[Command],
     category_order: Iterable[str],
 ) -> None:
     """Grouped command reference. Plain tables, no panels."""
@@ -549,7 +550,7 @@ def show_help(
     blank(console)
 
 
-def show_command_help(console: Console, command: "Command") -> None:
+def show_command_help(console: Console, command: Command) -> None:
     blank(console)
     console.print(
         Text.assemble(

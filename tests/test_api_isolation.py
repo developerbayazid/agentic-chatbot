@@ -9,29 +9,35 @@ import json
 
 import pytest
 
-from agentic_chatbot.database import create_connection, init_schema
+from agentic_chatbot.pg_vector_store import PgVectorStore
 from agentic_chatbot.repository import DocumentsRepository
 from agentic_chatbot.services.document_service import DocumentService
 from agentic_chatbot.tools.documents import create_document_tools
-from agentic_chatbot.vector_store import VectorIndexStore
 from tests.fakes import FakeEmbeddings
+from tests.pg import connect
 
 ALICE_TEXT = "alpha secret handbook onboarding"
 BOB_TEXT = "beta confidential onboarding"
 
 
-def _service(tmp_path, mode="hybrid"):
-    connection = create_connection(str(tmp_path / "isolation.db"))
-    init_schema(connection)
+def _service(schema, mode="hybrid"):
+    from agentic_chatbot.postgres import init_schema
+
+    connection = connect(schema)
+    init_schema(connection, embedding_dimensions=8)
     repository = DocumentsRepository(connection)
     service = DocumentService(
         repository,
-        VectorIndexStore(tmp_path / "faiss", dimensions=8),
+        PgVectorStore(connection, dimensions=8),
         FakeEmbeddings(dimensions=8),
         chunk_size=200,
         chunk_overlap=0,
         top_k=4,
-        min_score=0.0,
+        # Isolation must not depend on the sign of a cosine score. The fake
+        # embedding is a hash, so similarity between unrelated texts is
+        # arbitrary and often negative; a 0.0 floor would drop a user's own
+        # chunk for reasons that have nothing to do with ownership.
+        min_score=-1.0,
         search_mode=mode,
         vector_candidates=10,
         bm25_candidates=10,
@@ -48,8 +54,8 @@ def _ingest(service, root, name, text, namespace, owner_id):
 
 
 @pytest.fixture
-def shared(tmp_path):
-    service, repository, connection = _service(tmp_path)
+def shared(schema, tmp_path):
+    service, repository, connection = _service(schema)
 
     try:
         _ingest(service, tmp_path, "alice.md", ALICE_TEXT, "shared", "alice")
@@ -60,8 +66,8 @@ def shared(tmp_path):
 
 
 @pytest.mark.parametrize("mode", ["hybrid", "vector", "bm25"])
-def test_each_user_only_retrieves_their_own_chunks(tmp_path, mode):
-    service, _, connection = _service(tmp_path)
+def test_each_user_only_retrieves_their_own_chunks(schema, tmp_path, mode):
+    service, _, connection = _service(schema, mode)
 
     try:
         _ingest(service, tmp_path, "alice.md", ALICE_TEXT, "shared", "alice")

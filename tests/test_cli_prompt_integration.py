@@ -16,7 +16,7 @@ from prompt_toolkit.shortcuts import PromptSession
 from rich.console import Console
 
 from agentic_chatbot.cli.commands import COMMANDS
-from agentic_chatbot.cli.input import CommandCompleter, PROMPT_TEXT, STYLE
+from agentic_chatbot.cli.input import PROMPT_TEXT, STYLE, CommandCompleter
 from agentic_chatbot.cli.session import ChatSession
 
 TIMEOUT = 5.0

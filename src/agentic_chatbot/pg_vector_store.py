@@ -240,7 +240,7 @@ class PgVectorStore:
         with self._lock:
             cursor = self._connection.cursor()
 
-            for row_id, vector in zip(ids, normalised):
+            for row_id, vector in zip(ids, normalised, strict=False):
                 value: Any = _pg_vector(vector) if pgvector else vector
                 cursor.execute(
                     f"UPDATE document_chunks SET {column} = ?::{cast} "

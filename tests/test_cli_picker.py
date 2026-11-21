@@ -2,7 +2,7 @@
 
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from prompt_toolkit.input import DummyInput, create_pipe_input
@@ -51,7 +51,7 @@ SAMPLE = rows("Terminal UI Redesign", "Business Analytics Tools", "Tool Integrat
     ],
 )
 def test_relative_time_formats_ages(value, expected):
-    now = datetime(2026, 11, 11, 12, 0, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 11, 11, 12, 0, 0, tzinfo=UTC)
     assert picker.relative_time(value, now=now) == expected
 
 
@@ -169,7 +169,6 @@ def _drive(application, keys, timeout=6.0):
 
     thread = threading.Thread(target=run, daemon=True)
     thread.start()
-    deadline = time.monotonic() + timeout
     time.sleep(0.2)
     pipe = application.input
     pipe.send_text(keys)

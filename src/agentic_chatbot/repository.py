@@ -17,10 +17,9 @@ import uuid
 from collections.abc import Sequence
 from typing import Any
 
-from agentic_chatbot.database import connection_lock
 from agentic_chatbot.models import Chunk, Document, Note, Thread
-from agentic_chatbot.postgres import connection_lock as postgres_connection_lock
-from agentic_chatbot.sql_backend import sqlite_backend, wrap
+from agentic_chatbot.postgres import connection_lock
+from agentic_chatbot.sql_backend import wrap
 
 _SELECT_COLUMNS = "thread_id, title, owner_id, created_at, updated_at"
 _NOTE_COLUMNS = "note_id, thread_id, title, content, created_at"
@@ -70,11 +69,7 @@ class _Repository:
     def __init__(self, connection: Any):
         self._connection = wrap(connection)
         self._cursor = self._connection.cursor()
-        self._lock = (
-            connection_lock(connection)
-            if sqlite_backend(connection)
-            else postgres_connection_lock(connection)
-        )
+        self._lock = connection_lock(connection)
 
 
 class ThreadRepository(_Repository):

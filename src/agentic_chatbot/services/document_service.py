@@ -20,9 +20,9 @@ from agentic_chatbot.loaders import (
     load_file,
 )
 from agentic_chatbot.models import Chunk, Document, DocumentHit
+from agentic_chatbot.pg_vector_store import PgVectorStore
 from agentic_chatbot.repository import DocumentsRepository
 from agentic_chatbot.rrf import reciprocal_rank_fusion
-from agentic_chatbot.vector_store import VectorIndexStore
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ class DocumentService:
     def __init__(
         self,
         repository: DocumentsRepository,
-        vector_store: VectorIndexStore,
+        vector_store: PgVectorStore,
         embeddings: Embeddings,
         *,
         chunk_size: int,

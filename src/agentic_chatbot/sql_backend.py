@@ -1,69 +1,54 @@
-"""A minimal adapter that presents one cursor API over SQLite or PostgreSQL.
+"""A minimal cursor adapter over PostgreSQL.
 
-The repositories were written against ``sqlite3``: ``?`` placeholders, ``last
-rowid``, ``rowcount``, and mapping rows. Rather than keep two copies of ~500
-lines of SQL, this adapter absorbs the handful of differences so the query text
-is written once and every service above it is unaware of the backend.
+The repositories are written against a portable subset of SQL: ``?``
+placeholders, ``rowcount``, and mapping rows. This module absorbs the three
+places where psycopg differs so the query text stays readable and every service
+above the repository layer is unaware of the driver.
 
 Differences it absorbs
 ----------------------
 * placeholders — ``?`` → ``%s`` for psycopg
-* generated ids — SQLite has ``cursor.lastrowid``; Postgres needs ``RETURNING``,
-  which the caller requests explicitly via ``execute(..., returning=...)``
-* timestamps — psycopg returns ``datetime``; SQLite returned text. Rows are
-  normalised back to the ``"YYYY-MM-DD HH:MM:SS"`` text the models expect.
+* generated ids — the caller requests them explicitly via
+  ``execute(..., returning="row_id")``
+* timestamps — psycopg returns ``datetime``; rows are normalised back to the
+  ``"YYYY-MM-DD HH:MM:SS"`` text the models and API have always used
 
-What it deliberately does *not* hide: transactions. Both drivers commit and roll
-back the same way, so the repositories keep calling those directly.
+What it deliberately does *not* hide: transactions. The repositories call
+``commit`` and ``rollback`` directly.
 """
 
 from __future__ import annotations
 
 import datetime as dt
 import re
-import sqlite3
-from typing import Any, Iterable, Mapping
-
-import psycopg
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 _PLACEHOLDER = re.compile(r"\?")
 
-# SQLite's `CURRENT_TIMESTAMP` is UTC. Postgres's is resolved in the server's
-# timezone, so it is rewritten to the UTC wall clock to keep stored values
-# identical between backends (and therefore comparable during migration).
+# Postgres's `CURRENT_TIMESTAMP` is resolved in the server's timezone, so it is
+# rewritten to the UTC wall clock. Stored values then match what the application
+# has always written, and they stay comparable across deployments.
 _CURRENT_TIMESTAMP = re.compile(r"\bCURRENT_TIMESTAMP\b", re.IGNORECASE)
 _CURRENT_TIMESTAMP_PG = "(now() AT TIME ZONE 'UTC')"
 
 
-def is_postgres(connection: Any) -> bool:
-    return isinstance(connection, psycopg.Connection)
-
-
-def render(sql: str, postgres: bool) -> str:
-    """Translate the portable SQL dialect for the target driver."""
-    if not postgres:
-        return sql
-
-    return _CURRENT_TIMESTAMP.sub(
-        _CURRENT_TIMESTAMP_PG, _PLACEHOLDER.sub("%s", sql)
-    )
+def render(sql: str) -> str:
+    """Translate the portable SQL dialect for psycopg."""
+    return _CURRENT_TIMESTAMP.sub(_CURRENT_TIMESTAMP_PG, _PLACEHOLDER.sub("%s", sql))
 
 
 def normalize_value(value: Any) -> Any:
     """Render a value in the form the models and API have always received.
 
-    SQLite's ``CURRENT_TIMESTAMP`` yields naive UTC text, ``"2026-11-15
-    09:00:00"``. Postgres returns an *aware* ``datetime`` in the session's
-    timezone, so formatting it directly would silently shift the wall clock by
-    the server's UTC offset (and comparisons against the SQLite text would fail).
-
-    Aware values are therefore converted to UTC before formatting, which
-    reproduces SQLite's output exactly. A naive value is already in the shape
-    SQLite produced and is left alone.
+    Postgres returns an *aware* ``datetime`` in the session's timezone, so
+    formatting it directly would shift the wall clock by the server's UTC
+    offset. Aware values are converted to UTC before formatting; a naive value is
+    already in the shape the application produced and is left alone.
     """
     if isinstance(value, dt.datetime):
         if value.tzinfo is not None:
-            value = value.astimezone(dt.timezone.utc)
+            value = value.astimezone(dt.UTC)
 
         return value.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -71,10 +56,9 @@ def normalize_value(value: Any) -> Any:
 
 
 class Cursor:
-    """Cursor facade shared by both drivers."""
+    """Cursor facade over psycopg."""
 
     def __init__(self, connection: Any) -> None:
-        self._postgres = is_postgres(connection)
         self._raw = connection.cursor()
         self._lastrowid: int | None = None
 
@@ -84,24 +68,20 @@ class Cursor:
         params: Iterable[Any] = (),
         *,
         returning: str | None = None,
-    ) -> "Cursor":
+    ) -> Cursor:
         """Run one statement.
 
-        ``returning`` names a column to read back for a generated id. On SQLite
-        the value comes from ``lastrowid``; on Postgres the statement gets a
-        ``RETURNING`` clause appended, because inserting the clause there is the
-        only way to learn the id.
+        ``returning`` names a column to read back for a generated id. The clause
+        is appended here because it is the only way to learn the id of an
+        inserted row.
         """
-        if self._postgres and returning is not None:
-            self._raw.execute(f"{render(sql, True)} RETURNING {returning}", tuple(params))
+        if returning is not None:
+            self._raw.execute(f"{render(sql)} RETURNING {returning}", tuple(params))
             row = self._raw.fetchone()
             self._lastrowid = None if row is None else int(row[returning])
             return self
 
-        self._raw.execute(render(sql, self._postgres), tuple(params))
-
-        if not self._postgres:
-            self._lastrowid = self._raw.lastrowid
+        self._raw.execute(render(sql), tuple(params))
 
         return self
 
@@ -114,8 +94,7 @@ class Cursor:
         return self._raw.rowcount
 
     def fetchone(self) -> Mapping[str, Any] | None:
-        row = self._raw.fetchone()
-        return _normalize_row(row)
+        return _normalize_row(self._raw.fetchone())
 
     def fetchall(self) -> list[Mapping[str, Any]]:
         return [_normalize_row(row) for row in self._raw.fetchall()]
@@ -128,8 +107,8 @@ def _normalize_row(row: Any) -> Any:
     if row is None:
         return None
 
-    # dict_row (psycopg) and sqlite3.Row both support keyed access; neither is a
-    # plain dict, so copy through the keys to keep call sites unchanged.
+    # dict_row gives a plain dict; copy through the keys so call sites are
+    # unaffected by the driver's row type.
     if isinstance(row, dict):
         return {key: normalize_value(value) for key, value in row.items()}
 
@@ -160,9 +139,5 @@ class Connection:
 
 
 def wrap(connection: Any) -> Connection:
-    """Accept either a raw driver connection or an already-wrapped one."""
+    """Accept either a raw psycopg connection or an already-wrapped one."""
     return connection if isinstance(connection, Connection) else Connection(connection)
-
-
-def sqlite_backend(connection: Any) -> bool:
-    return isinstance(connection, sqlite3.Connection)

@@ -2,23 +2,20 @@ import uuid
 
 import pytest
 
-from agentic_chatbot.database import create_connection, init_schema
 from agentic_chatbot.repository import ThreadRepository
 from agentic_chatbot.services.thread_service import ThreadService
 from tests.fakes import FakeCheckpointer
 
 
 @pytest.fixture
-def thread_service(tmp_path):
-    connection = create_connection(str(tmp_path / "threads.db"))
-    init_schema(connection)
+def thread_service(connection):
     checkpointer = FakeCheckpointer()
     service = ThreadService(ThreadRepository(connection), checkpointer)
 
     try:
         yield service, connection, checkpointer
     finally:
-        connection.close()
+        pass
 
 
 def test_create_thread_defaults(thread_service):
@@ -61,10 +58,11 @@ def test_touch_updates_last_activity(thread_service):
     service, connection, _checkpointer = thread_service
     thread = service.create_thread()
 
-    connection.execute(
-        "UPDATE threads SET updated_at = '2000-01-01 00:00:00' WHERE thread_id = ?",
-        (thread.thread_id,),
-    )
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE threads SET updated_at = '2000-01-01 00:00:00' WHERE thread_id = %s",
+            (thread.thread_id,),
+        )
     connection.commit()
 
     service.touch_thread(thread.thread_id)
@@ -77,14 +75,15 @@ def test_list_threads_orders_by_last_update(thread_service):
     first = service.create_thread("First")
     second = service.create_thread("Second")
 
-    connection.execute(
-        "UPDATE threads SET updated_at = '2020-01-01 00:00:00' WHERE thread_id = ?",
-        (first.thread_id,),
-    )
-    connection.execute(
-        "UPDATE threads SET updated_at = '2021-01-01 00:00:00' WHERE thread_id = ?",
-        (second.thread_id,),
-    )
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE threads SET updated_at = '2020-01-01 00:00:00' WHERE thread_id = %s",
+            (first.thread_id,),
+        )
+        cursor.execute(
+            "UPDATE threads SET updated_at = '2021-01-01 00:00:00' WHERE thread_id = %s",
+            (second.thread_id,),
+        )
     connection.commit()
 
     assert [thread.thread_id for thread in service.list_threads()] == [

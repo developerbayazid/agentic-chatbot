@@ -12,6 +12,7 @@ from rich.console import Console
 
 from agentic_chatbot.cli import approval
 from agentic_chatbot.cli import console as ui
+from agentic_chatbot.config import redacted_dsn_label
 from agentic_chatbot.services.chat_service import ChatService
 
 if TYPE_CHECKING:
@@ -278,7 +279,7 @@ def _drive_turn(
         events = chat_service.resume_turn(thread_id, decision)
 
 
-def build_status(session: "ChatSession") -> "StatusSnapshot":
+def build_status(session: ChatSession) -> StatusSnapshot:
     """Collect display-safe runtime facts."""
     container = session.container
     database_ok = ui.database_ok(container.connection)
@@ -291,7 +292,7 @@ def build_status(session: "ChatSession") -> "StatusSnapshot":
 
     return ui.StatusSnapshot(
         model=session.settings.llm_model,
-        database_path=session.settings.database_path,
+        database_label=redacted_dsn_label(session.settings.postgres_dsn),
         database_ok=database_ok,
         graph_ok=hasattr(container, "chatbot"),
         tracing_enabled=bool(session.settings.langsmith_tracing),

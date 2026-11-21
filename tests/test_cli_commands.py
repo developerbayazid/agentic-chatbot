@@ -115,7 +115,9 @@ def test_session_process_prefers_the_approval_prompt(session, monkeypatch):
         "agentic_chatbot.cli.chat.process_message", fake_process
     )
 
-    approval_ask = lambda question, completions=(): "a"
+    def approval_ask(question, completions=()):
+        return "a"
+
     session.approval_ask = approval_ask
     session.process("hello")
 
@@ -330,18 +332,21 @@ def test_status_command_renders(full_session, console):
     assert "DATABASE" in text
 
 
-def test_status_command_shows_database_path(full_session, console):
+def test_status_command_shows_the_database_label(full_session, console):
+    from agentic_chatbot.config import redacted_dsn_label
+
     dispatch(full_session, "/status")
 
-    # Long paths move to their own line, so compare with whitespace collapsed.
+    # Long labels move to their own line, so compare with whitespace collapsed.
     rendered = "".join(output(console).split())
     for border in "│┃|":
         rendered = rendered.replace(border, "")
 
-    assert "".join(full_session.settings.database_path.split()) in rendered
+    label = redacted_dsn_label(full_session.settings.postgres_dsn)
+    assert "".join(label.split()) in rendered
 
 
-def test_welcome_banner_hides_database_path(full_session, console):
+def test_welcome_banner_hides_database_label(full_session, console):
     from agentic_chatbot.cli.chat import build_status
 
     ui.show_welcome(console, build_status(full_session))
@@ -350,7 +355,7 @@ def test_welcome_banner_hides_database_path(full_session, console):
     assert "MODEL" in text
     assert "GRAPH" in text
     assert "DATABASE" not in text
-    assert full_session.settings.database_path not in text
+    assert full_session.settings.postgres_dsn not in text
 
 
 def test_version_reads_package_metadata(full_session, console):

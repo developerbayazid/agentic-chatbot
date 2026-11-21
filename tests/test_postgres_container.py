@@ -1,103 +1,22 @@
 """Acceptance: the real services work against PostgreSQL, not just the repos.
 
-Builds an actual ``ChatbotContainer`` on Postgres and drives ``ThreadService``,
+Builds an actual ``ChatbotContainer`` and drives ``ThreadService``,
 ``NotesRepository`` and ``DocumentService`` through it — the same code paths the
 CLI and the API use. Embeddings are a deterministic double so no network is
 needed, but the checkpointer is the real ``PostgresSaver``.
-
-Skipped unless ``TEST_POSTGRES_DSN`` is set.
 """
 
 from __future__ import annotations
 
-import os
-import shutil
-from pathlib import Path
-
 import pytest
-
-POSTGRES_DSN = os.environ.get("TEST_POSTGRES_DSN", "")
-
-requires_postgres = pytest.mark.skipif(
-    not POSTGRES_DSN, reason="TEST_POSTGRES_DSN is not set"
-)
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-INVENTORY_DATASET = (
-    REPO_ROOT / "inventory-data" / "inventory" / "inventory_data.seed.json"
-)
-
-
-def _truncate(dsn: str) -> None:
-    """Empty every application table so assertions on counts are meaningful.
-
-    The dimension row is cleared too: another test file may have run with a
-    different embedding size, and the guard would otherwise refuse to start.
-    """
-    from agentic_chatbot.postgres import create_connection, init_schema
-
-    connection = create_connection(dsn)
-
-    # Reset before applying the schema: `init_schema` refuses a stored dimension
-    # that disagrees with this suite's, and another test file may have run with a
-    # different size. Dropping the vector column too lets it be recreated at the
-    # right width.
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT to_regclass('rag_meta') AS found")
-        has_schema = cursor.fetchone()["found"] is not None
-
-        if has_schema:
-            cursor.execute("DELETE FROM rag_meta WHERE key = 'embedding_dimensions'")
-            cursor.execute(
-                "ALTER TABLE document_chunks DROP COLUMN IF EXISTS embedding_vec"
-            )
-    connection.commit()
-
-    init_schema(connection)
-
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "TRUNCATE document_chunks, documents, notes, threads RESTART IDENTITY"
-        )
-        # Checkpoint tables are managed by LangGraph; clear them too so a rerun
-        # starts from a known state.
-        for table in ("checkpoint_writes", "checkpoint_blobs", "checkpoints"):
-            if _exists(cursor, table):
-                cursor.execute(f"TRUNCATE {table}")
-
-    connection.commit()
-    connection.close()
-
-
-def _exists(cursor, table: str) -> bool:
-    cursor.execute("SELECT to_regclass(%s) AS found", (table,))
-    return cursor.fetchone()["found"] is not None
 
 
 @pytest.fixture
-def pg_container(tmp_path):
-    from agentic_chatbot.config import Settings
+def pg_container(schema, settings):
     from agentic_chatbot.container import ChatbotContainer
-
-    inventory_copy = tmp_path / "inventory" / "inventory_data.json"
-    inventory_copy.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(INVENTORY_DATASET, inventory_copy)
-
-    _truncate(POSTGRES_DSN)
-
-    settings = Settings(
-        database_backend="postgres",
-        postgres_dsn=POSTGRES_DSN,
-        rag_index_path=str(tmp_path / "faiss"),
-        inventory_data_path=str(inventory_copy),
-        openai_api_key="test-key",
-        _env_file=None,
-    )
-
-    container = ChatbotContainer(settings)
-
     from tests.fakes import FakeEmbeddings
 
+    container = ChatbotContainer(settings)
     container.document_service._embeddings = FakeEmbeddings(
         dimensions=settings.embedding_dimensions
     )
@@ -108,14 +27,12 @@ def pg_container(tmp_path):
         container.close()
 
 
-@requires_postgres
 def test_container_uses_the_postgres_checkpointer(pg_container):
     from langgraph.checkpoint.postgres import PostgresSaver
 
     assert isinstance(pg_container.checkpointer, PostgresSaver)
 
 
-@requires_postgres
 def test_thread_service_round_trip(pg_container):
     threads = pg_container.thread_service
 
@@ -133,7 +50,6 @@ def test_thread_service_round_trip(pg_container):
     assert threads.thread_exists(created.thread_id) is False
 
 
-@requires_postgres
 def test_document_ingest_and_search_on_postgres(pg_container, tmp_path):
     """The full RAG path: read, chunk, embed, store in Postgres, then retrieve."""
     document = tmp_path / "handbook.txt"
@@ -157,9 +73,8 @@ def test_document_ingest_and_search_on_postgres(pg_container, tmp_path):
     assert any("30 days" in hit.content for hit in hits)
 
 
-@requires_postgres
 def test_owner_isolation_holds_on_postgres(pg_container, tmp_path):
-    """The critical security property, re-proven on the new backend."""
+    """The critical security property, proven through the full stack."""
     service = pg_container.document_service
 
     alice_file = tmp_path / "alice.txt"
@@ -181,7 +96,6 @@ def test_owner_isolation_holds_on_postgres(pg_container, tmp_path):
     assert not any("Alice" in hit.content for hit in bob)
 
 
-@requires_postgres
 def test_stats_reflect_postgres_rows(pg_container, tmp_path):
     document = tmp_path / "invoices.txt"
     document.write_text("One document about invoices.", encoding="utf-8")
@@ -191,3 +105,103 @@ def test_stats_reflect_postgres_rows(pg_container, tmp_path):
 
     assert stats["documents"] == 1
     assert stats["chunks"] >= 1
+
+
+def test_deleting_a_thread_removes_its_checkpoints_for_good(settings):
+    """Deleting a thread must remove its history durably, not just visibly.
+
+    ``ThreadService.delete_thread`` removes the checkpoints and then the thread
+    row; the row delete commits, which is what makes the checkpoint removal
+    durable. This pins that behaviour end to end.
+    """
+    from langchain_core.messages import AIMessage, HumanMessage
+    from langgraph.graph import END, START, MessagesState, StateGraph
+
+    from agentic_chatbot.container import ChatbotContainer
+
+    def respond(_state):
+        return {"messages": [AIMessage(content="reply")]}
+
+    def write_turn(container, thread_id: str) -> None:
+        builder = StateGraph(MessagesState)
+        builder.add_node("respond", respond)
+        builder.add_edge(START, "respond")
+        builder.add_edge("respond", END)
+        graph = builder.compile(checkpointer=container.checkpointer)
+        graph.invoke(
+            {"messages": [HumanMessage(content="hello")]},
+            config={"configurable": {"thread_id": thread_id}},
+        )
+
+    def checkpoint_exists(container, thread_id: str) -> bool:
+        return (
+            container.checkpointer.get_tuple(
+                {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}}
+            )
+            is not None
+        )
+
+    first = ChatbotContainer(settings)
+    try:
+        thread = first.thread_service.create_thread("Bye", owner_id=None)
+        write_turn(first, thread.thread_id)
+        assert checkpoint_exists(first, thread.thread_id)
+
+        assert first.thread_service.delete_thread(thread.thread_id) is True
+        assert not checkpoint_exists(first, thread.thread_id)
+    finally:
+        first.close()
+
+    second = ChatbotContainer(settings)
+    try:
+        assert not checkpoint_exists(second, thread.thread_id)
+        assert not second.thread_service.thread_exists(thread.thread_id)
+    finally:
+        second.close()
+
+
+def test_checkpoints_persist_across_containers(settings):
+    """Graph state must survive a restart: it lives in the same database.
+
+    This is the regression guard for a real bug: ``PostgresSaver`` issues its
+    statements but never commits, and this application's connection is not
+    autocommit, so psycopg discarded every checkpoint on close. Chat history
+    survived within a process and vanished across a restart.
+    """
+    from langchain_core.messages import AIMessage, HumanMessage
+    from langgraph.graph import END, START, MessagesState, StateGraph
+
+    from agentic_chatbot.container import ChatbotContainer
+
+    def respond(state):
+        return {"messages": [AIMessage(content="persisted reply")]}
+
+    thread_id = "persisted-thread"
+    config = {"configurable": {"thread_id": thread_id}}
+
+    def run_once() -> None:
+        builder = StateGraph(MessagesState)
+        builder.add_node("respond", respond)
+        builder.add_edge(START, "respond")
+        builder.add_edge("respond", END)
+
+        graph = builder.compile(checkpointer=first.checkpointer)
+        graph.invoke({"messages": [HumanMessage(content="hello")]}, config=config)
+
+    first = ChatbotContainer(settings)
+    try:
+        run_once()
+        stored = first.chat_service.get_messages(thread_id)
+        assert stored, "the checkpoint should be readable in the same process"
+    finally:
+        first.close()
+
+    second = ChatbotContainer(settings)
+    try:
+        restored = second.chat_service.get_messages(thread_id)
+        assert [message.content for message in restored] == [
+            "hello",
+            "persisted reply",
+        ]
+    finally:
+        second.close()

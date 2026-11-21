@@ -15,7 +15,7 @@ graph, so a future HTTP layer can reuse them unchanged.
 """
 
 from agentic_chatbot.cli.app import main, run_session
-from agentic_chatbot.cli.commands import COMMANDS, CATEGORIES, dispatch
+from agentic_chatbot.cli.commands import CATEGORIES, COMMANDS, dispatch
 from agentic_chatbot.cli.session import ChatSession
 
 __all__ = [

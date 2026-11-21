@@ -1,24 +1,21 @@
-"""BM25 keyword search over the SQLite chunk table."""
+"""BM25 keyword search over the chunk table."""
 
 import pytest
 
 from agentic_chatbot.bm25_store import BM25IndexStore, tokenize
-from agentic_chatbot.database import create_connection, init_schema
 from agentic_chatbot.models import Chunk
 from agentic_chatbot.repository import DocumentsRepository
 
 
 @pytest.fixture
-def context(tmp_path):
-    connection = create_connection(str(tmp_path / "bm25.db"))
-    init_schema(connection)
+def context(connection):
     repository = DocumentsRepository(connection)
     store = BM25IndexStore(repository)
 
     try:
         yield repository, store
     finally:
-        connection.close()
+        pass
 
 
 def _add(repository, namespace, source, chunks):
@@ -205,7 +202,7 @@ def test_invalidate_drops_cached_namespaces(context):
     assert store.search(["handbook"], "alpha", k=5)
 
 
-def test_new_store_instance_rebuilds_from_sqlite(context):
+def test_new_store_instance_rebuilds_from_the_database(context):
     repository, store = context
     _add(repository, "handbook", "handbook.md", ["alpha"])
 

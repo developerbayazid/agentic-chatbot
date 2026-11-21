@@ -8,9 +8,8 @@ path, key, or DSN — only booleans and a status.
 from __future__ import annotations
 
 import logging
-import sqlite3
-from pathlib import Path
 
+import psycopg
 from fastapi import APIRouter, status
 from fastapi.responses import JSONResponse
 
@@ -31,10 +30,16 @@ def health() -> dict[str, str]:
 
 
 def _database_ready(container) -> bool:
+    """Whether the database answers ``SELECT 1``.
+
+    A Postgres outage must become a clean 503 rather than an escaped 500: a
+    load balancer that sees a 500 cannot distinguish an unhealthy dependency from
+    a bug in the application.
+    """
     try:
         container.connection.execute("SELECT 1").fetchone()
         return True
-    except sqlite3.Error:
+    except psycopg.Error:
         logger.debug("readiness: database check failed", exc_info=True)
         return False
 
@@ -46,10 +51,8 @@ def _graph_ready(container) -> bool:
 def _storage_ready(container) -> bool:
     """Whether the vector store is usable.
 
-    The two backends store vectors differently — FAISS writes a directory,
-    ``PgVectorStore`` writes rows — so this asks each for a cheap, side-effect-free
-    answer rather than assuming a filesystem path exists. Probe generators are
-    preferred; bulk ``stats()`` is not, because readiness must stay cheap.
+    ``PgVectorStore`` exposes ``probe()``, a cheap side-effect-free check; bulk
+    ``stats()`` is not used because readiness must stay cheap.
     """
     store = getattr(container, "vector_store", None)
 
@@ -62,9 +65,7 @@ def _storage_ready(container) -> bool:
         if callable(probe):
             return bool(probe())
 
-        # FAISS: the index directory must exist and be writable.
-        directory = Path(store.path_for("default")).parent
-        return directory.is_dir()
+        return False
     except Exception:  # noqa: BLE001 - an unusable store is simply not ready
         logger.debug("readiness: vector store check failed", exc_info=True)
         return False

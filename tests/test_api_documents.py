@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 TEXT = b"Onboarding starts on Monday and covers the handbook basics.\n"
 PDF_BYTES = b"%PDF-1.4\n% a minimal but magic-valid header\n"
 

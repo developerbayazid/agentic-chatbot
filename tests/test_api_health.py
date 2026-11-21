@@ -1,7 +1,5 @@
 """API foundation: lifespan, health, readiness, and the error envelope."""
 
-import sqlite3
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -15,27 +13,16 @@ class FakeContainer:
         from types import SimpleNamespace
 
         self.closed = False
-        self.connection = sqlite3.connect(":memory:", check_same_thread=False)
-        self.connection.execute("CREATE TABLE t (id INTEGER)")
+        self.connection = SimpleNamespace()
         self.chatbot = SimpleNamespace()
-        self.vector_store = SimpleNamespace(
-            path_for=lambda namespace: __import__("pathlib").Path(
-                _storage_dir
-            ) / f"{namespace}.faiss"
-        )
+        self.vector_store = SimpleNamespace(probe=lambda: True)
 
     def close(self):
         self.closed = True
-        self.connection.close()
-
-
-_storage_dir = None
 
 
 @pytest.fixture
-def fake_factory(tmp_path, monkeypatch):
-    global _storage_dir
-    _storage_dir = tmp_path
+def fake_factory():
     created = []
 
     def factory(_settings):
@@ -71,11 +58,10 @@ def test_readiness_reports_named_checks(api_client):
 def test_readiness_exposes_no_paths_or_secrets(api_client, api_settings):
     text = api_client.get("/health/ready").text
 
-    assert api_settings.database_path not in text
-    assert api_settings.rag_index_path not in text
+    assert api_settings.postgres_dsn not in text
     assert api_settings.jwt_secret_key not in text
     assert "faiss" not in text
-    assert "sqlite" not in text.replace("checks", "")
+    assert "password" not in text.lower()
 
 
 def test_storage_check_accepts_a_store_without_filesystem_paths(api_client):
@@ -131,6 +117,33 @@ def test_readiness_fails_when_the_database_is_closed(api_client):
     assert response.json()["status"] == "not_ready"
 
 
+def test_readiness_fails_on_a_postgres_error(api_client):
+    """A Postgres outage must be a 503, not an escaped 500.
+
+    ``_database_ready`` originally caught only ``sqlite3.Error``. On the Postgres
+    backend psycopg raises ``psycopg.Error``, so a dropped connection escaped the
+    handler and broke every container health check.
+    """
+    import psycopg
+
+    container = api_client.app.state.container
+
+    class BrokenConnection:
+        def execute(self, *_args, **_kwargs):
+            raise psycopg.OperationalError("connection lost")
+
+    original = container.connection
+    container.connection = BrokenConnection()
+
+    try:
+        response = api_client.get("/health/ready")
+        assert response.status_code == 503
+        assert response.json()["checks"]["database"] is False
+        assert response.json()["status"] == "not_ready"
+    finally:
+        container.connection = original
+
+
 def test_readiness_fails_with_placeholder_configuration(api_settings, tmp_path):
     from tests.conftest import JWT_SECRET
 
@@ -177,7 +190,7 @@ def test_the_default_factory_uses_the_supplied_settings(api_settings):
     """A regression guard: create_app must never fall back to get_settings().
 
     An earlier version ignored the argument, so every API test quietly opened the
-    real chatbot_memory.db instead of the temporary one.
+    real database instead of the test one.
     """
     app = create_app(settings=api_settings)
 
@@ -186,7 +199,7 @@ def test_the_default_factory_uses_the_supplied_settings(api_settings):
 
         assert client.get("/health").status_code == 200
         assert container.settings is api_settings
-        assert container.settings.database_path == api_settings.database_path
+        assert container.settings.postgres_dsn == api_settings.postgres_dsn
 
 
 def test_wildcard_cors_is_rejected(api_settings):

@@ -8,8 +8,8 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.checkpoint.memory import InMemorySaver
 
 from agentic_chatbot.container import TOOL_GUIDANCE
-from agentic_chatbot.database import create_connection, init_schema
 from agentic_chatbot.graph.workflow import build_chatbot
+from agentic_chatbot.pg_vector_store import PgVectorStore
 from agentic_chatbot.repository import DocumentsRepository, NotesRepository
 from agentic_chatbot.services.document_service import DocumentService
 from agentic_chatbot.tools import calculator
@@ -17,8 +17,8 @@ from agentic_chatbot.tools.documents import create_document_tools
 from agentic_chatbot.tools.mocks import web_search
 from agentic_chatbot.tools.notes import create_note_tools
 from agentic_chatbot.tools.utilities import summarize_text
-from agentic_chatbot.vector_store import VectorIndexStore
 from tests.fakes import FakeEmbeddings
+from tests.pg import connect
 
 DOCUMENT_TEXT = (
     "A RAG system has two major phases: retrieval and generation."
@@ -68,12 +68,14 @@ def tool_messages(result):
     ]
 
 
-def make_service(tmp_path, name):
-    connection = create_connection(str(tmp_path / f"{name}.db"))
-    init_schema(connection)
+def make_service(schema):
+    from agentic_chatbot.postgres import init_schema
+
+    connection = connect(schema)
+    init_schema(connection, embedding_dimensions=8)
     service = DocumentService(
         DocumentsRepository(connection),
-        VectorIndexStore(tmp_path / f"{name}-faiss", dimensions=8),
+        PgVectorStore(connection, dimensions=8),
         FakeEmbeddings(dimensions=8),
         chunk_size=500,
         chunk_overlap=20,
@@ -82,8 +84,8 @@ def make_service(tmp_path, name):
 
 
 @pytest.fixture
-def documents(tmp_path):
-    connection, service = make_service(tmp_path, "selection")
+def documents(schema, tmp_path):
+    connection, service = make_service(schema)
     source = tmp_path / "handbook.md"
     source.write_text(DOCUMENT_TEXT, encoding="utf-8")
     service.ingest_path(source, "default")
@@ -98,8 +100,8 @@ def documents(tmp_path):
 
 
 @pytest.fixture
-def profile(tmp_path):
-    connection, service = make_service(tmp_path, "profile")
+def profile(schema, tmp_path):
+    connection, service = make_service(schema)
     source = tmp_path / "bayazid_hasan.md"
     source.write_text(PROFILE_TEXT, encoding="utf-8")
     service.ingest_path(source, "default")
@@ -115,8 +117,8 @@ def profile(tmp_path):
 
 
 @pytest.fixture
-def empty_documents(tmp_path):
-    connection, service = make_service(tmp_path, "empty")
+def empty_documents(schema, tmp_path):
+    connection, service = make_service(schema)
 
     try:
         yield SimpleNamespace(
@@ -128,9 +130,12 @@ def empty_documents(tmp_path):
 
 
 @pytest.fixture
-def notes(tmp_path):
-    connection = create_connection(str(tmp_path / "notes.db"))
-    init_schema(connection)
+def notes(schema):
+    from agentic_chatbot.postgres import init_schema
+
+    connection = connect(schema)
+    # Without this the queries fall through `search_path` to `public.notes`.
+    init_schema(connection, embedding_dimensions=8)
     repository = NotesRepository(connection)
     repository.create(
         "thread-1",

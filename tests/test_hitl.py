@@ -4,16 +4,17 @@ from types import SimpleNamespace
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.types import Command
 
-from agentic_chatbot.database import create_connection
 from agentic_chatbot.graph.workflow import build_chatbot
 from agentic_chatbot.inventory.approvals import SENSITIVE_TOOLS
 from agentic_chatbot.inventory.tools import create_inventory_tools
 from agentic_chatbot.models import TurnEvent
+from agentic_chatbot.postgres import run_outside_transaction
 from agentic_chatbot.services.chat_service import ChatService
 from tests.fakes import FakeThreadService, FakeTitleService
+from tests.pg import connect
 
 
 class ScriptedLLM:
@@ -480,67 +481,82 @@ def test_stock_adjustment_rejection_leaves_stock_unchanged(inventory_service):
 
 
 def test_pending_approval_survives_restart_and_same_thread_resumes(
-    inventory_service, tmp_path
+    inventory_service, schema
 ):
     config = {"configurable": {"thread_id": "persisted-thread"}}
-    manager_first = create_connection(str(tmp_path / "checkpoints.db"))
-    saver_first = SqliteSaver(manager_first)
-    saver_first.setup()
 
-    graph_first, _ = build(
-        inventory_service,
-        [
-            tool_call(
-                "update_product",
-                {"product_id": "PRD-1001", "selling_price": 95000},
-                "call-persist",
+    # Both savers exist at the same time so that neither can be left open if an
+    # assertion fails: an unclosed connection holds locks on the schema and the
+    # teardown would block.
+    manager_first = connect(schema)
+    manager_second = connect(schema)
+
+    try:
+        saver_first = PostgresSaver(manager_first)
+        run_outside_transaction(manager_first, saver_first.setup)
+
+        graph_first, _ = build(
+            inventory_service,
+            [
+                tool_call(
+                    "update_product",
+                    {"product_id": "PRD-1001", "selling_price": 95000},
+                    "call-persist",
+                ),
+                AIMessage(content="Updated after restart."),
+            ],
+            saver_first,
+        )
+        graph_first.invoke(
+            {"messages": [HumanMessage(content="raise price")]}, config=config
+        )
+        payload = payload_for(graph_first, "persisted-thread")
+        assert payload is not None
+        assert graph_first.get_state(config).next == ("approval",)
+
+        # `PostgresSaver` does not commit on a non-autocommit connection, so a
+        # caller driving it directly has to. (The container's checkpointer
+        # commits for itself; see `container._create_checkpointer`.) Without
+        # this the "new process" below would see nothing, which is exactly the
+        # restart data loss this test exists to catch.
+        manager_first.commit()
+        manager_first.close()
+
+        # Simulate a new process: new connection, new saver, new compiled graph.
+        saver_second = PostgresSaver(manager_second)
+        run_outside_transaction(manager_second, saver_second.setup)
+        graph_second, _ = build(
+            inventory_service,
+            [AIMessage(content="Updated after restart.")],
+            saver_second,
+        )
+
+        assert graph_second.get_state(config).next == ("approval",)
+        restored = payload_for(graph_second, "persisted-thread")
+        assert restored["tool_call_id"] == "call-persist"
+        assert restored["approval_token"] == payload["approval_token"]
+
+        graph_second.invoke(
+            Command(
+                resume={
+                    "action": "approve",
+                    "approval_token": restored["approval_token"],
+                }
             ),
-            AIMessage(content="Updated after restart."),
-        ],
-        saver_first,
-    )
-    graph_first.invoke(
-        {"messages": [HumanMessage(content="raise price")]}, config=config
-    )
-    payload = payload_for(graph_first, "persisted-thread")
-    assert payload is not None
-    assert graph_first.get_state(config).next == ("approval",)
-    manager_first.close()
+            config=config,
+        )
 
-    # Simulate a new process: new connection, new saver, new compiled graph.
-    manager_second = create_connection(str(tmp_path / "checkpoints.db"))
-    saver_second = SqliteSaver(manager_second)
-    saver_second.setup()
-    graph_second, _ = build(
-        inventory_service,
-        [AIMessage(content="Updated after restart.")],
-        saver_second,
-    )
+        assert price_of(inventory_service) == 95000
+        assert graph_second.get_state(config).values["messages"][-1].content == (
+            "Updated after restart."
+        )
 
-    assert graph_second.get_state(config).next == ("approval",)
-    restored = payload_for(graph_second, "persisted-thread")
-    assert restored["tool_call_id"] == "call-persist"
-    assert restored["approval_token"] == payload["approval_token"]
-
-    graph_second.invoke(
-        Command(
-            resume={
-                "action": "approve",
-                "approval_token": restored["approval_token"],
-            }
-        ),
-        config=config,
-    )
-
-    assert price_of(inventory_service) == 95000
-    assert graph_second.get_state(config).values["messages"][-1].content == (
-        "Updated after restart."
-    )
-
-    other = graph_second.get_state({"configurable": {"thread_id": "another-thread"}})
-    assert not other.tasks
-
-    manager_second.close()
+        other = graph_second.get_state(
+            {"configurable": {"thread_id": "another-thread"}}
+        )
+        assert not other.tasks
+    finally:
+        manager_second.close()
 
 
 def test_repeated_resume_does_not_duplicate_the_operation(inventory_service):

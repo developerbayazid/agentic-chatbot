@@ -1,25 +1,24 @@
 """Connection handling and schema setup for PostgreSQL.
 
-This is the Postgres counterpart to :mod:`agentic_chatbot.database`. The two
-modules intentionally expose the same three entry points — ``create_connection``,
-``connection_lock`` and ``init_schema`` — so the container can pick a backend
-without any service knowing which one it got.
+PostgreSQL is the application's only storage backend: it holds the relational
+rows, the embeddings (pgvector), and the LangGraph checkpoints. Everything here
+serves that single path, so no service needs to know which engine it is on.
 
 Dialect notes:
 
-* psycopg uses ``%s`` placeholders, not ``?``. Because the repository SQL is
-  written with ``?`` (so the SQLite path stays untouched), every statement goes
-  through :func:`translate` at execution time. That is one regex per statement,
-  which is far cheaper than maintaining two copies of every query.
-* ``TIMESTAMPTZ`` is rendered back as ``"YYYY-MM-DD HH:MM:SS"`` text, matching
-  what SQLite's ``CURRENT_TIMESTAMP`` produced. Models keep ``str | None``, the
-  API payloads do not change, and the frontend's timestamp parser keeps working.
+* psycopg uses ``%s`` placeholders, not ``?``. The repository SQL is written with
+  ``?`` for readability, so every statement goes through :func:`translate` at
+  execution time. That is one regex per statement, which is far cheaper than
+  writing every query in the driver's dialect.
+* ``TIMESTAMPTZ`` is rendered back as ``"YYYY-MM-DD HH:MM:SS"`` text, which is the
+  shape the models, the API payloads and the frontend's timestamp parser expect.
 """
 
 from __future__ import annotations
 
 import re
 import threading
+from typing import Any
 
 import psycopg
 from psycopg.rows import dict_row

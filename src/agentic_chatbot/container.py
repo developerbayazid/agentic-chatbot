@@ -9,13 +9,9 @@ from __future__ import annotations
 
 import logging
 import threading
-from pathlib import Path
 from typing import Any
 
-from langgraph.checkpoint.sqlite import SqliteSaver
-
 from agentic_chatbot.config import Settings, get_settings
-from agentic_chatbot.database import create_connection, init_schema
 from agentic_chatbot.embeddings import create_embeddings
 from agentic_chatbot.graph import build_chatbot
 from agentic_chatbot.inventory.approvals import SENSITIVE_TOOLS
@@ -25,6 +21,12 @@ from agentic_chatbot.inventory.data_access import (
 )
 from agentic_chatbot.inventory.service import InventoryService
 from agentic_chatbot.llm import create_llm
+from agentic_chatbot.postgres import (
+    connection_lock,
+    create_connection,
+    init_schema,
+    run_outside_transaction,
+)
 from agentic_chatbot.repository import (
     DocumentsRepository,
     NotesRepository,
@@ -37,7 +39,6 @@ from agentic_chatbot.services import (
     TitleService,
 )
 from agentic_chatbot.tools import get_tools
-from agentic_chatbot.vector_store import VectorIndexStore
 
 logger = logging.getLogger(__name__)
 
@@ -129,102 +130,107 @@ def _knowledge_catalog(document_service: DocumentService) -> str:
 
 
 def _create_storage(settings: Settings) -> Any:
-    """Open the configured storage backend.
+    """Open the PostgreSQL connection.
 
-    PostgreSQL is the default; SQLite is opt-in for offline use and is what the
-    test suite uses.
+    The DSN carries credentials and has no safe default, so a missing value is
+    reported with the exact fix rather than a connection error to localhost.
     """
-    if settings.database_backend == "postgres":
-        from agentic_chatbot.postgres import create_connection as pg_connect
+    if not settings.postgres_dsn:
+        raise RuntimeError(
+            "POSTGRES_DSN is not set.\n"
+            "  Set it in .env (see .env.example), for example:\n"
+            "    POSTGRES_DSN=postgresql://user:password@127.0.0.1:5432/bayazid\n"
+            "  The database must exist and have the `vector` extension available."
+        )
 
-        if not settings.postgres_dsn:
-            # Actionable, because this is the first thing a fresh clone hits: the
-            # repository ships no credentials.
-            raise RuntimeError(
-                "DATABASE_BACKEND=postgres requires POSTGRES_DSN, which is not set.\n"
-                "  Set it in .env (see .env.example), for example:\n"
-                "    POSTGRES_DSN=postgresql://user:password@127.0.0.1:5432/bayazid\n"
-                "  Or run without PostgreSQL:\n"
-                "    DATABASE_BACKEND=sqlite"
-            )
-
-        return pg_connect(settings.postgres_dsn)
-
-    return create_connection(settings.database_path)
+    return create_connection(settings.postgres_dsn)
 
 
 def _init_storage(connection: Any, settings: Settings) -> None:
-    if settings.database_backend == "postgres":
-        from agentic_chatbot.postgres import init_schema as pg_init
-
-        pg_init(connection, embedding_dimensions=settings.embedding_dimensions)
-        return
-
     init_schema(connection, embedding_dimensions=settings.embedding_dimensions)
 
 
-def _create_checkpointer(connection: Any, settings: Settings) -> Any:
-    """Pick the checkpointer that matches the store.
+def _create_checkpointer(connection: Any) -> Any:
+    """Build the Postgres checkpointer on the shared connection.
 
-    Both implement the same ``LangGraph`` checkpointer protocol, so the graph and
-    every service above it are unaware of the difference.
+    ``PostgresSaver`` is written for an autocommit connection: it issues its
+    statements and never commits. This application's connection is deliberately
+    *not* autocommit, because the repositories rely on real transactions, and
+    psycopg rolls back on close. Left uncommitted, every checkpoint would be
+    discarded when the connection closed — chat history would survive within a
+    process and vanish across a restart. The subclass below commits after each
+    write, which is what the repositories already do.
     """
-    if settings.database_backend == "postgres":
-        from langgraph.checkpoint.postgres import PostgresSaver
+    from langgraph.checkpoint.postgres import PostgresSaver
 
-        from agentic_chatbot.postgres import connection_lock
+    lock = connection_lock(connection)
 
-        # `from_conn_string` opens its own connection, which would put graph
-        # state in a different transaction from the repositories. Constructing
-        # it directly keeps one connection, and therefore one lock and one
-        # transaction, exactly as the SQLite path does.
-        saver = PostgresSaver(connection)
+    class _CommittingPostgresSaver(PostgresSaver):
+        """``PostgresSaver`` that commits its own writes.
 
-        # `PostgresSaver.__init__` installs its own `threading.Lock` — but it
-        # writes through the same psycopg connection as the repositories and
-        # the vector store, and a connection runs one command at a time. A
-        # second lock would let the checkpointer and a repository thread each
-        # believe they had exclusive use, which psycopg reports as "another
-        # command is already in progress" (and, on its pipeline path, "cannot
-        # enter pipeline mode, connection not idle"). Handing it the
-        # connection's lock is what makes those writes serialize.
-        saver.lock = connection_lock(connection)
+        The write and the commit are both taken under the connection's lock, so
+        another thread cannot slip a statement in between them and have its work
+        committed — or discarded — along with this one.
+        """
 
-        return saver
+        def put(self, *args: Any, **kwargs: Any) -> Any:
+            with lock:
+                result = super().put(*args, **kwargs)
+                connection.commit()
+                return result
 
-    return SqliteSaver(connection)
+        def put_writes(self, *args: Any, **kwargs: Any) -> Any:
+            with lock:
+                result = super().put_writes(*args, **kwargs)
+                connection.commit()
+                return result
+
+        def delete_thread(self, *args: Any, **kwargs: Any) -> Any:
+            # `ThreadService.delete_thread` also deletes the thread row, which
+            # commits — so this deletion would be persisted either way. It is
+            # overridden anyway so that a caller using the checkpointer directly
+            # gets the same guarantee as `put`.
+            with lock:
+                result = super().delete_thread(*args, **kwargs)
+                connection.commit()
+                return result
+
+        def prune(self, *args: Any, **kwargs: Any) -> Any:
+            with lock:
+                result = super().prune(*args, **kwargs)
+                connection.commit()
+                return result
+
+    # `from_conn_string` opens its own connection, which would put graph state in
+    # a different transaction from the repositories. Constructing it directly
+    # keeps one connection, and therefore one lock and one transaction.
+    saver = _CommittingPostgresSaver(connection)
+
+    # `PostgresSaver.__init__` installs its own `threading.Lock` — but it writes
+    # through the same psycopg connection as the repositories and the vector
+    # store, and a connection runs one command at a time. A second lock would let
+    # the checkpointer and a repository thread each believe they had exclusive
+    # use, which psycopg reports as "another command is already in progress".
+    # Handing it the connection's lock is what makes those writes serialize.
+    saver.lock = lock
+
+    return saver
 
 
-def _setup_checkpointer(checkpointer: Any, connection: Any, settings: Settings) -> None:
+def _setup_checkpointer(checkpointer: Any, connection: Any) -> None:
     """Create the checkpoint tables.
 
-    Postgres needs this outside a transaction because ``PostgresSaver.setup()``
-    issues ``CREATE INDEX CONCURRENTLY``; SQLite has no such restriction.
+    This must run outside a transaction because ``PostgresSaver.setup()`` issues
+    ``CREATE INDEX CONCURRENTLY``.
     """
-    if settings.database_backend == "postgres":
-        from agentic_chatbot.postgres import run_outside_transaction
-
-        run_outside_transaction(connection, checkpointer.setup)
-        return
-
-    checkpointer.setup()
+    run_outside_transaction(connection, checkpointer.setup)
 
 
 def _create_vector_store(connection: Any, settings: Settings) -> Any:
-    """Return the embedding store that matches the database backend.
+    """Embeddings live in ``document_chunks`` so they travel with their rows."""
+    from agentic_chatbot.pg_vector_store import PgVectorStore
 
-    Postgres keeps vectors in ``document_chunks`` so they travel with the rows
-    they belong to; SQLite keeps the per-namespace FAISS files as before.
-    """
-    if settings.database_backend == "postgres":
-        from agentic_chatbot.pg_vector_store import PgVectorStore
-
-        return PgVectorStore(connection, settings.embedding_dimensions)
-
-    return VectorIndexStore(
-        Path(settings.rag_index_path),
-        settings.embedding_dimensions,
-    )
+    return PgVectorStore(connection, settings.embedding_dimensions)
 
 
 class ChatbotContainer:
@@ -234,8 +240,8 @@ class ChatbotContainer:
         self.connection = _create_storage(settings)
         _init_storage(self.connection, settings)
 
-        self.checkpointer = _create_checkpointer(self.connection, settings)
-        _setup_checkpointer(self.checkpointer, self.connection, settings)
+        self.checkpointer = _create_checkpointer(self.connection)
+        _setup_checkpointer(self.checkpointer, self.connection)
 
         self.notes_repository = NotesRepository(self.connection)
         self.embeddings = create_embeddings(settings)

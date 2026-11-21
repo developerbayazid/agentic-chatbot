@@ -1,7 +1,6 @@
 """New rendering pieces: the emerald grid, background palette, framed input,
 and timed tool feedback."""
 
-import io
 import sys
 
 import pytest
@@ -9,9 +8,9 @@ from rich.color import Color
 from rich.console import Console
 from rich.text import Text
 
-from agentic_chatbot.cli import background, glyphs, input as input_module
+from agentic_chatbot.cli import background, glyphs, theme
 from agentic_chatbot.cli import console as ui
-from agentic_chatbot.cli import theme
+from agentic_chatbot.cli import input as input_module
 
 
 @pytest.fixture

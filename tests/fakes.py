@@ -47,8 +47,7 @@ class FakeChatbot:
         if self.error is not None:
             raise self.error
 
-        for chunk in self.chunks:
-            yield chunk
+        yield from self.chunks
 
 
 class FakeThreadService:

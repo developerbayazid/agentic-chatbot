@@ -14,7 +14,7 @@ SHORTCUTS = (("/help", "commands"), ("/threads", "conversations"))
 def _status(**overrides):
     values = {
         "model": "gpt-4o-mini",
-        "database_path": "chatbot_memory.db",
+        "database_label": "postgresql://127.0.0.1:5432/bayazid",
         "database_ok": True,
         "graph_ok": True,
         "tracing_enabled": True,
@@ -178,10 +178,12 @@ def test_welcome_shortens_the_session_id():
     assert "03679327-b818-4d73-a03d-a3eda5c2c0e3" not in text
 
 
-def test_welcome_never_shows_the_database_path():
-    text = render(status=_status(database_path="secret/place.db"))
+def test_welcome_never_shows_the_database():
+    text = render(
+        status=_status(database_label="postgresql://secret-host/secret-db")
+    )
 
-    assert "secret/place.db" not in text
+    assert "secret-host" not in text
     assert "DATABASE" not in text
 
 
@@ -226,8 +228,8 @@ def status_output(**overrides) -> str:
     return console.export_text()
 
 
-def test_status_shows_the_database_path():
-    assert "chatbot_memory.db" in status_output()
+def test_status_shows_the_database_label():
+    assert "postgresql://127.0.0.1:5432/bayazid" in status_output()
 
 
 def test_status_can_hide_the_database():

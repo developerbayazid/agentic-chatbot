@@ -18,9 +18,10 @@ Layout::
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Sequence
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.application import Application
@@ -43,7 +44,6 @@ from agentic_chatbot.cli import console as ui
 from agentic_chatbot.cli import theme
 
 if TYPE_CHECKING:
-    from rich.console import Console
 
     from agentic_chatbot.cli.session import ChatSession
     from agentic_chatbot.models import Thread
@@ -79,7 +79,7 @@ def relative_time(value: str | None, now: datetime | None = None) -> str:
     if moment is None:
         return "-"
 
-    reference = now or datetime.now(timezone.utc)
+    reference = now or datetime.now(UTC)
     seconds = max((reference - moment).total_seconds(), 0)
 
     if seconds < 60:
@@ -98,17 +98,17 @@ def relative_time(value: str | None, now: datetime | None = None) -> str:
 def _parse_timestamp(value: str) -> datetime | None:
     for pattern in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"):
         try:
-            return datetime.strptime(value, pattern).replace(tzinfo=timezone.utc)
+            return datetime.strptime(value, pattern).replace(tzinfo=UTC)
         except ValueError:
             continue
     try:
         parsed = datetime.fromisoformat(value)
     except ValueError:
         return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
-def _message_count(session: "ChatSession", thread_id: str) -> int:
+def _message_count(session: ChatSession, thread_id: str) -> int:
     try:
         return len(session.chat_service.get_messages(thread_id))
     except Exception:  # noqa: BLE001 - a picker must never crash on one thread
@@ -116,7 +116,7 @@ def _message_count(session: "ChatSession", thread_id: str) -> int:
         return 0
 
 
-def build_rows(session: "ChatSession", threads: Sequence["Thread"]) -> list[SessionRow]:
+def build_rows(session: ChatSession, threads: Sequence[Thread]) -> list[SessionRow]:
     """Turn threads into table rows with recency, message count, and active flag."""
     rows: list[SessionRow] = []
     for position, thread in enumerate(threads, start=1):
@@ -328,7 +328,7 @@ def supports_interactive(prompt_session) -> bool:
     return isinstance(prompt_session, PromptSession)
 
 
-def pick(session: "ChatSession", threads: Sequence["Thread"]) -> "Thread | None":
+def pick(session: ChatSession, threads: Sequence[Thread]) -> Thread | None:
     """Run the interactive picker; return the chosen thread or ``None``."""
     rows = build_rows(session, threads)
     try:

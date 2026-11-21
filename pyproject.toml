@@ -8,12 +8,10 @@ authors = [
 ]
 requires-python = ">=3.14"
 dependencies = [
-    "faiss-cpu>=1.16.0",
     "langchain>=1.4.9",
     "langchain-openai>=1.7.4",
     "langchain-text-splitters>=1.0",
     "langgraph>=1.2.19",
-    "langgraph-checkpoint-sqlite>=3.1.3",
     "langsmith>=0.14.17",
     "numpy>=2",
     "pypdf>=7.1.0",
@@ -43,6 +41,7 @@ build-backend = "uv_build"
 dev = [
     "httpx>=0.28.1",
     "pytest>=9.2.0",
+    "ruff>=0.17.6",
 ]
 
 [tool.pytest.ini_options]
@@ -50,6 +49,32 @@ testpaths = ["tests"]
 filterwarnings = [
     'ignore:.*asyncio\.iscoroutinefunction.*:DeprecationWarning',
 ]
+
+# Linting. The codebase was written to roughly 100 columns, so that is the
+# limit rather than black's 88: it keeps the existing formatting intact instead
+# of forcing a whitespace-only rewrite across the whole tree.
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# E/F: pycodestyle/pyflakes correctness. I: import order. B: bugbear. UP: pyupgrade.
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests routinely exceed the line limit in tables of fixtures and asserts.
+"tests/**" = ["E501"]
+# FastAPI's dependency-injection idiom is `file: UploadFile = File(...)`; B008
+# flags exactly that required pattern.
+"src/agentic_chatbot/api/routers/**" = ["B008"]
+# Pre-existing long lines in the ERP validation/service and CLI metadata tables.
+# These files are covered by the test suite and are out of scope for a
+# formatting-only sweep; new code in them must still respect the limit.
+"src/agentic_chatbot/inventory/validation.py" = ["E501"]
+"src/agentic_chatbot/inventory/service.py" = ["E501"]
+"src/agentic_chatbot/cli/commands.py" = ["E501"]
+"src/agentic_chatbot/cli/console.py" = ["E501"]
 
 # Allows `uv run fastapi dev` / `uv run fastapi run` from any directory.
 # The root main.py exposes `app = create_app()` for the same reason.

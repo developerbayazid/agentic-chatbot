@@ -1,9 +1,7 @@
-import sqlite3
 from datetime import datetime
 
 import pytest
 
-from agentic_chatbot.database import init_schema
 from agentic_chatbot.repository import NotesRepository
 from agentic_chatbot.tools import get_tools
 from agentic_chatbot.tools.builtin import calculator, get_current_time
@@ -51,17 +49,10 @@ def test_get_current_time_returns_error_for_unknown_timezone():
     assert result == "Error: unknown timezone 'Not/AZone'"
 
 
-def test_registry_exposes_every_tool():
-    connection = sqlite3.connect(":memory:")
-    connection.row_factory = sqlite3.Row
-    init_schema(connection)
-
-    try:
-        tool_names = {
-            tool.name for tool in get_tools(NotesRepository(connection))
-        }
-    finally:
-        connection.close()
+def test_registry_exposes_every_tool(connection):
+    tool_names = {
+        tool.name for tool in get_tools(NotesRepository(connection))
+    }
 
     assert tool_names == {
         "base64_decode",

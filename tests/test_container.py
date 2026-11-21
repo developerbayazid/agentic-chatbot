@@ -1,27 +1,38 @@
-import sqlite3
-
+import psycopg
 import pytest
 
-from agentic_chatbot.container import ChatbotContainer, TOOL_GUIDANCE
+from agentic_chatbot.container import TOOL_GUIDANCE, ChatbotContainer
 from agentic_chatbot.inventory.tools import create_inventory_tools
+from agentic_chatbot.pg_vector_store import PgVectorStore
 from agentic_chatbot.repository import DocumentsRepository, NotesRepository
 from agentic_chatbot.services.chat_service import ChatService
 from agentic_chatbot.services.document_service import DocumentService
 from agentic_chatbot.services.thread_service import ThreadService
 from agentic_chatbot.services.title_service import TitleService
 from agentic_chatbot.tools.registry import STATIC_TOOLS
-from agentic_chatbot.vector_store import VectorIndexStore
 
 
-def _table_names(connection):
-    rows = connection.execute(
-        "SELECT name FROM sqlite_master WHERE type = 'table'"
-    ).fetchall()
-    return {row["name"] for row in rows}
+def _table_names(connection, schema):
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT tablename FROM pg_tables WHERE schemaname = %s",
+            (schema,),
+        )
+        return {row["tablename"] for row in cursor.fetchall()}
 
 
-def test_container_creates_schema_and_services(container):
-    names = _table_names(container.connection)
+def _columns(connection, schema, table):
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema = %s AND table_name = %s",
+            (schema, table),
+        )
+        return {row["column_name"] for row in cursor.fetchall()}
+
+
+def test_container_creates_schema_and_services(container, schema):
+    names = _table_names(container.connection, schema)
 
     assert "threads" in names
     assert "notes" in names
@@ -29,19 +40,15 @@ def test_container_creates_schema_and_services(container):
     assert "document_chunks" in names
     assert "rag_meta" in names
     assert any(name.startswith("checkpoint") for name in names)
-    note_columns = {
-        row[1]
-        for row in container.connection.execute("PRAGMA table_info(notes)")
-    }
-    assert "thread_id" in note_columns
+    assert "thread_id" in _columns(container.connection, schema, "notes")
     assert isinstance(container.thread_service, ThreadService)
     assert isinstance(container.title_service, TitleService)
     assert isinstance(container.chat_service, ChatService)
     assert isinstance(container.notes_repository, NotesRepository)
     assert isinstance(container.documents_repository, DocumentsRepository)
-    assert isinstance(container.vector_store, VectorIndexStore)
+    assert isinstance(container.vector_store, PgVectorStore)
     assert isinstance(container.document_service, DocumentService)
-    assert container.vector_store.path_for("default").parent.is_dir()
+    assert container.vector_store.probe() is True
     assert container.document_service._search_mode == "hybrid"
     assert container.document_service._rrf_k == 60
     tool_names = {tool.name for tool in container.tools}
@@ -90,5 +97,20 @@ def test_close_closes_connection(settings):
     instance = ChatbotContainer(settings)
     instance.close()
 
-    with pytest.raises(sqlite3.ProgrammingError):
+    # A closed psycopg connection raises on use rather than returning a result.
+    with pytest.raises(psycopg.OperationalError):
         instance.connection.execute("SELECT 1")
+
+
+def test_missing_dsn_is_reported_actionably(tmp_path):
+    from agentic_chatbot.config import Settings
+
+    settings = Settings(
+        postgres_dsn="",
+        inventory_data_path=str(tmp_path / "inventory.json"),
+        openai_api_key="test-key",
+        _env_file=None,
+    )
+
+    with pytest.raises(RuntimeError, match="POSTGRES_DSN is not set"):
+        ChatbotContainer(settings)

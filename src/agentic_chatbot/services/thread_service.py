@@ -15,8 +15,7 @@ class ThreadService:
     def __init__(
         self,
         repository: ThreadRepository,
-        # Either SqliteSaver or PostgresSaver; both satisfy this protocol.
-        checkpointer: "BaseCheckpointSaver",
+        checkpointer: BaseCheckpointSaver,
     ):
         self._repository = repository
         self._checkpointer = checkpointer

@@ -2,21 +2,18 @@
 
 import pytest
 
-from agentic_chatbot.database import create_connection, init_schema
 from agentic_chatbot.loaders import DocumentLoadError, LoadResult, Section
+from agentic_chatbot.pg_vector_store import PgVectorStore
 from agentic_chatbot.repository import DocumentsRepository
 from agentic_chatbot.services import document_service as document_service_module
 from agentic_chatbot.services.document_service import DocumentService
-from agentic_chatbot.vector_store import VectorIndexStore
 from tests.fakes import FakeEmbeddings
 
 
 @pytest.fixture
-def service_context(tmp_path):
-    connection = create_connection(str(tmp_path / "documents.db"))
-    init_schema(connection)
+def service_context(connection, tmp_path):
     repository = DocumentsRepository(connection)
-    store = VectorIndexStore(tmp_path / "faiss", dimensions=8)
+    store = PgVectorStore(connection, dimensions=8)
     embeddings = FakeEmbeddings(dimensions=8)
     service = DocumentService(
         repository,
@@ -27,10 +24,7 @@ def service_context(tmp_path):
         top_k=2,
     )
 
-    try:
-        yield service, repository, embeddings, store, tmp_path
-    finally:
-        connection.close()
+    yield service, repository, embeddings, store, tmp_path
 
 
 def _write(path, text):

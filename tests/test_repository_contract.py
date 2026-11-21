@@ -1,23 +1,17 @@
-"""Storage parity: the same repository contract against SQLite and PostgreSQL.
+"""The repository contract, exercised against PostgreSQL.
 
-These tests exist because the migration's whole premise is that swapping the
-backend is invisible above the repository layer. Running one contract against
-both engines is the only way to show that.
-
-The Postgres half is skipped unless ``TEST_POSTGRES_DSN`` is set, so a normal
-``uv run pytest`` needs no database. Set it to run the full comparison::
-
-    TEST_POSTGRES_DSN=postgresql://postgres:postgres@127.0.0.1:5432/bayazid_test
+This started life as a SQLite-vs-PostgreSQL parity suite. With a single backend
+the comparison is gone, but the contract itself — timestamp shape, generated ids,
+owner scoping, namespace handling — is still the thing every service depends on,
+so it is kept as one focused suite.
 """
 
 from __future__ import annotations
 
-import os
 import uuid
 
 import pytest
 
-from agentic_chatbot.database import create_connection, init_schema
 from agentic_chatbot.models import Chunk
 from agentic_chatbot.repository import (
     DocumentsRepository,
@@ -25,72 +19,14 @@ from agentic_chatbot.repository import (
     ThreadRepository,
 )
 
-POSTGRES_DSN = os.environ.get("TEST_POSTGRES_DSN", "")
 
-requires_postgres = pytest.mark.skipif(
-    not POSTGRES_DSN, reason="TEST_POSTGRES_DSN is not set"
-)
-
-
-def _sqlite():
-    connection = create_connection(":memory:")
-    init_schema(connection)
-    return connection
-
-
-def _postgres():
-    from agentic_chatbot.postgres import create_connection as pg_connect
-    from agentic_chatbot.postgres import init_schema as pg_init
-
-    connection = pg_connect(POSTGRES_DSN)
-
-    # Start from a clean slate *before* applying the schema, so a leftover
-    # `embedding_dimensions` row from another test file cannot make the dimension
-    # guard reject this run. Guarded because the table does not exist on a brand
-    # new database.
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT to_regclass('rag_meta') AS found")
-        has_schema = cursor.fetchone()["found"] is not None
-
-        if has_schema:
-            cursor.execute("DELETE FROM rag_meta WHERE key = 'embedding_dimensions'")
-
-            # A pgvector column sized by another test file would reject this
-            # suite's vectors; drop it so `init_schema` recreates it correctly.
-            cursor.execute(
-                "ALTER TABLE document_chunks DROP COLUMN IF EXISTS embedding_vec"
-            )
-    connection.commit()
-
-    pg_init(connection)
-
-    # Each run starts from empty tables so assertions on counts are meaningful.
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "TRUNCATE document_chunks, documents, notes, threads RESTART IDENTITY"
-        )
-    connection.commit()
-    return connection
-
-
-BACKENDS = [pytest.param("sqlite", id="sqlite")]
-
-
-@pytest.fixture(params=[*BACKENDS, pytest.param("postgres", marks=requires_postgres)])
-def store(request):
-    if request.param == "postgres":
-        connection = _postgres()
-    else:
-        connection = _sqlite()
-
-    try:
-        yield {
-            "threads": ThreadRepository(connection),
-            "notes": NotesRepository(connection),
-            "documents": DocumentsRepository(connection),
-        }
-    finally:
-        connection.close()
+@pytest.fixture
+def store(connection):
+    return {
+        "threads": ThreadRepository(connection),
+        "notes": NotesRepository(connection),
+        "documents": DocumentsRepository(connection),
+    }
 
 
 # --------------------------------------------------------------------- threads --
@@ -103,8 +39,8 @@ def test_thread_round_trip(store):
     assert created.thread_id
     assert created.title == "First chat"
     assert created.owner_id == "alice"
-    # Timestamps are text in the same shape on both backends, which is what the
-    # API payloads and the frontend's parser depend on.
+    # Timestamps stay text in one shape, which is what the API payloads and the
+    # frontend's parser depend on.
     assert isinstance(created.created_at, str)
     assert len(created.created_at) == 19
     assert created.created_at[4] == "-" and created.created_at[10] == " "
@@ -156,7 +92,6 @@ def test_note_round_trip_and_search_is_case_insensitive(store):
     assert notes.get(thread_id, created.note_id) == created
     assert len(notes.list_all(thread_id)) == 1
 
-    # Matches regardless of case, on both engines.
     assert [n.note_id for n in notes.search(thread_id, "milk")] == [created.note_id]
     assert [n.note_id for n in notes.search(thread_id, "GROCERIES")] == [
         created.note_id
@@ -201,7 +136,7 @@ def test_document_chunks_round_trip(store):
 
     assert isinstance(document.created_at, str)
     assert len(row_ids) == 2
-    # Generated ids must be real, positive, and distinct on both engines.
+    # Generated ids must be real, positive, and distinct.
     assert all(isinstance(value, int) and value > 0 for value in row_ids)
     assert len(set(row_ids)) == 2
     assert documents.chunk_ids(document.doc_id) == row_ids

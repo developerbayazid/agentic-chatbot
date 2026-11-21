@@ -19,8 +19,7 @@ class FakeChatService:
         if self.error is not None:
             raise self.error
 
-        for event in self.events:
-            yield event
+        yield from self.events
 
 
 @pytest.fixture

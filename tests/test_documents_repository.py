@@ -2,21 +2,13 @@
 
 import pytest
 
-from agentic_chatbot.database import create_connection, init_schema
 from agentic_chatbot.models import Chunk
 from agentic_chatbot.repository import DocumentsRepository
 
 
 @pytest.fixture
-def repository(tmp_path):
-    connection = create_connection(str(tmp_path / "documents.db"))
-    init_schema(connection)
-    repository = DocumentsRepository(connection)
-
-    try:
-        yield repository
-    finally:
-        connection.close()
+def repository(connection):
+    return DocumentsRepository(connection)
 
 
 def test_replace_document_inserts_document_and_chunks(repository):
@@ -160,33 +152,38 @@ def test_chunks_fingerprint_changes_fingerprint_on_reingest(repository):
     assert repository.chunks_fingerprint("alpha") != before
 
 
-def test_init_schema_is_idempotent(tmp_path):
-    path = tmp_path / "twice.db"
+def test_init_schema_is_idempotent(schema):
+    from agentic_chatbot.postgres import init_schema
+    from tests.pg import connect
 
-    first = create_connection(str(path))
+    first = connect(schema)
     init_schema(first)
     first.close()
 
-    second = create_connection(str(path))
+    second = connect(schema)
     init_schema(second)
-    tables = {
-        row[0]
-        for row in second.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table'"
+
+    with second.cursor() as cursor:
+        cursor.execute(
+            "SELECT tablename FROM pg_tables WHERE schemaname = %s",
+            (schema,),
         )
-    }
+        tables = {row["tablename"] for row in cursor.fetchall()}
+
     second.close()
 
     assert {"documents", "document_chunks", "rag_meta"} <= tables
 
 
-def test_changing_embedding_dimensions_raises(tmp_path):
-    path = tmp_path / "dimensions.db"
+def test_changing_embedding_dimensions_raises(schema):
+    from agentic_chatbot.postgres import init_schema
+    from tests.pg import connect
 
-    connection = create_connection(str(path))
+    connection = connect(schema)
     init_schema(connection, embedding_dimensions=8)
 
-    with pytest.raises(RuntimeError, match="dimension"):
-        init_schema(connection, embedding_dimensions=16)
-
-    connection.close()
+    try:
+        with pytest.raises(RuntimeError, match="dimension"):
+            init_schema(connection, embedding_dimensions=16)
+    finally:
+        connection.close()

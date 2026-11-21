@@ -5,22 +5,19 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentic_chatbot.database import create_connection, init_schema
+from agentic_chatbot.pg_vector_store import PgVectorStore
 from agentic_chatbot.repository import DocumentsRepository
 from agentic_chatbot.services.document_service import DocumentService
 from agentic_chatbot.tools.documents import create_document_tools
-from agentic_chatbot.vector_store import VectorIndexStore
 from tests.fakes import FakeEmbeddings
 
 
 @pytest.fixture
-def rag(tmp_path):
-    connection = create_connection(str(tmp_path / "tools.db"))
-    init_schema(connection)
+def rag(connection, tmp_path):
     embeddings = FakeEmbeddings(dimensions=8)
     service = DocumentService(
         DocumentsRepository(connection),
-        VectorIndexStore(tmp_path / "faiss", dimensions=8),
+        PgVectorStore(connection, dimensions=8),
         embeddings,
         chunk_size=100,
         chunk_overlap=10,
@@ -29,14 +26,11 @@ def rag(tmp_path):
     document.write_text("onboarding starts on monday", encoding="utf-8")
     service.ingest_path(document, "handbook")
 
-    try:
-        yield SimpleNamespace(
-            tools={tool.name: tool for tool in create_document_tools(service)},
-            service=service,
-            embeddings=embeddings,
-        )
-    finally:
-        connection.close()
+    yield SimpleNamespace(
+        tools={tool.name: tool for tool in create_document_tools(service)},
+        service=service,
+        embeddings=embeddings,
+    )
 
 
 def test_search_documents_returns_structured_hits(rag):

@@ -8,11 +8,12 @@ from __future__ import annotations
 
 import logging
 import shutil
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from prompt_toolkit import PromptSession
-from prompt_toolkit.completion import Completer, Completion as PTCompletion
+from prompt_toolkit.completion import Completer
+from prompt_toolkit.completion import Completion as PTCompletion
 from prompt_toolkit.document import Document
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.history import InMemoryHistory

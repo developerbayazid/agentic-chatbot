@@ -1,6 +1,5 @@
 """Completion, glyph fallback, session loop, and input routing."""
 
-import io
 import sys
 
 import pytest
@@ -362,7 +361,7 @@ def test_status_toolbar_never_leaks_secrets(session):
     joined = "".join(text for _, text in input_module._status_toolbar(session))
 
     assert session.settings.openai_api_key not in joined
-    assert session.settings.database_path not in joined
+    assert session.settings.postgres_dsn not in joined
 
 
 def test_status_toolbar_uses_the_dot_separator(session):

@@ -6,10 +6,6 @@ in the places where a regression would be a security bug rather than a bug.
 
 from __future__ import annotations
 
-import json
-
-import pytest
-
 from tests.test_api_approvals import PendingChatService
 
 

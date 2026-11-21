@@ -8,6 +8,7 @@ from agentic_chatbot.config import Settings
 from agentic_chatbot.container import ChatbotContainer
 from agentic_chatbot.inventory.data_access import InventoryStore
 from agentic_chatbot.inventory.service import InventoryService
+from tests.pg import connect, create_schema, drop_schema, dsn_for_schema
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 # Tests always start from the pristine seed. The working inventory_data.json is
@@ -45,20 +46,66 @@ def isolate_langsmith_env():
 
 
 @pytest.fixture
-def settings(tmp_path) -> Settings:
+def schema():
+    """A disposable PostgreSQL schema, dropped after the test.
+
+    One server serves the whole suite; a schema per test keeps tests isolated
+    without creating a database per test. See ``tests/pg.py`` and
+    ``TEST_POSTGRES_DSN``.
+    """
+    from tests.pg import application_tables_in_public
+
+    before = application_tables_in_public()
+    name = create_schema()
+
+    try:
+        yield name
+    finally:
+        # A test that connected without calling `init_schema` writes its tables
+        # into the shared `public` schema instead, where they leak into other
+        # tests. Catch that here rather than letting it pass silently.
+        leaked = application_tables_in_public() - before
+        drop_schema(name)
+
+        if leaked:
+            raise AssertionError(
+                "test wrote to the shared `public` schema instead of its own: "
+                f"{sorted(leaked)}. Call init_schema() on the connection."
+            )
+
+
+@pytest.fixture
+def dsn(schema) -> str:
+    """The DSN the application should use, scoped to this test's schema."""
+    return dsn_for_schema(schema)
+
+
+@pytest.fixture
+def connection(schema):
+    """An initialised application schema in this test's isolated schema."""
+    from agentic_chatbot.postgres import init_schema
+
+    instance = connect(schema)
+    init_schema(instance, embedding_dimensions=8)
+
+    try:
+        yield instance
+    finally:
+        instance.close()
+
+
+@pytest.fixture
+def settings(tmp_path, dsn) -> Settings:
     inventory_copy = tmp_path / "container-inventory" / "inventory_data.json"
     inventory_copy.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(INVENTORY_DATASET, inventory_copy)
 
     return Settings(
-        # Tests run on SQLite explicitly. Postgres is the application default,
-        # but the suite must not require a running server; the Postgres-specific
-        # tests opt in through TEST_POSTGRES_DSN.
-        database_backend="sqlite",
-        database_path=str(tmp_path / "chatbot_memory.db"),
-        rag_index_path=str(tmp_path / "faiss"),
+        # PostgreSQL is the only backend; the DSN points at this test's schema.
+        postgres_dsn=dsn,
         inventory_data_path=str(inventory_copy),
         openai_api_key="test-key",
+        embedding_dimensions=8,
         _env_file=None,
     )
 
@@ -86,15 +133,15 @@ JWT_SECRET = "a-real-secret-used-only-by-tests-and-long-enough-for-hs256"
 
 
 @pytest.fixture
-def api_settings(settings) -> Settings:
-    """API settings over the same temporary database/FAISS/inventory."""
+def api_settings(settings, tmp_path) -> Settings:
+    """API settings over the same isolated database and a temporary upload dir."""
     return settings.model_copy(
         update={
             "openai_api_key": "test-key",
             "api_keys": API_KEYS,
             "jwt_secret_key": JWT_SECRET,
             "cors_origins": "http://localhost:3000",
-            "api_upload_path": str(Path(settings.database_path).parent / "uploads"),
+            "api_upload_path": str(tmp_path / "uploads"),
         }
     )
 

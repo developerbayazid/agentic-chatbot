@@ -15,7 +15,6 @@ from rich.color import Color
 from rich.style import Style
 from rich.theme import Theme
 
-
 # --- palette -----------------------------------------------------------------
 
 BRAND_HEX = "#10B981"

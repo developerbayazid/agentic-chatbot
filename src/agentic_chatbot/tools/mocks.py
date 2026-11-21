@@ -10,7 +10,7 @@ import hashlib
 import json
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import quote_plus
 
 from langchain_core.tools import tool
@@ -99,7 +99,7 @@ def get_news(topic: str = "general", limit: int = 5) -> str:
     Mock implementation: headlines are simulated until a news API key is set.
     """
     count = max(1, min(limit, 10))
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = datetime.now(UTC).date().isoformat()
 
     articles = [
         {
@@ -168,7 +168,7 @@ def get_stock_price(symbol: str) -> str:
             "change": change,
             "change_percent": round(change / price * 100, 2),
             "currency": "USD",
-            "as_of": datetime.now(timezone.utc).isoformat(),
+            "as_of": datetime.now(UTC).isoformat(),
             "mock": True,
         }
     )
@@ -246,7 +246,7 @@ def send_slack_message(channel: str, text: str) -> str:
         {
             "channel": channel,
             "text": text,
-            "ts": datetime.now(timezone.utc).timestamp(),
+            "ts": datetime.now(UTC).timestamp(),
             "status": "delivered",
             "mock": True,
         }
@@ -370,7 +370,7 @@ def get_holidays(country: str = "US", year: int | None = None) -> str:
         supported = ", ".join(sorted(holidays))
         return f"Error: unsupported country. Supported: {supported}."
 
-    target_year = year or datetime.now(timezone.utc).year
+    target_year = year or datetime.now(UTC).year
     entries = [
         {"name": name, "date": f"{target_year}-{month_day}"}
         for name, month_day in holidays[code]
@@ -403,12 +403,12 @@ def track_package(tracking_number: str) -> str:
 
     events = [
         {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "location": "Origin facility",
             "description": "Parcel accepted",
         },
         {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "location": "Regional hub",
             "description": f"Status: {status.replace('_', ' ')}",
         },

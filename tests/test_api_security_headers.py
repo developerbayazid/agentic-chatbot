@@ -78,7 +78,7 @@ def test_no_credentials_are_hardcoded_in_settings():
     assert not offenders, "hardcoded database credentials: " + "; ".join(offenders)
 
 
-def test_postgres_backend_fails_clearly_without_a_dsn():
+def test_missing_dsn_fails_clearly():
     """The first thing a fresh clone hits must be actionable, not a stack trace."""
     import pytest
 
@@ -86,7 +86,6 @@ def test_postgres_backend_fails_clearly_without_a_dsn():
     from agentic_chatbot.container import _create_storage
 
     settings = Settings(
-        database_backend="postgres",
         postgres_dsn="",
         openai_api_key="test-key",
         _env_file=None,
@@ -97,5 +96,7 @@ def test_postgres_backend_fails_clearly_without_a_dsn():
 
     message = str(error.value)
     assert "POSTGRES_DSN" in message
-    assert "DATABASE_BACKEND=sqlite" in message, "must offer the SQLite escape hatch"
+    # The message must say where to put it, since there is no fallback backend.
+    assert ".env" in message
+    assert "postgresql://" in message
 

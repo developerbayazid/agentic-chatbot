@@ -10,9 +10,10 @@ imports that would create a cycle (``commands`` -> ``registry``).
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from difflib import get_close_matches
-from typing import Any, Callable
+from typing import Any
 
 CATEGORY_GENERAL = "General"
 CATEGORY_CONVERSATION = "Conversation"

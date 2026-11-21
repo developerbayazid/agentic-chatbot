@@ -5,13 +5,12 @@ import threading
 import pytest
 
 from agentic_chatbot.bm25_store import BM25IndexStore
-from agentic_chatbot.database import create_connection, init_schema
+from agentic_chatbot.pg_vector_store import PgVectorStore
 from agentic_chatbot.repository import DocumentsRepository
 from agentic_chatbot.services.document_service import (
     DocumentService,
     RetrievalError,
 )
-from agentic_chatbot.vector_store import VectorIndexStore
 from tests.fakes import FakeEmbeddings
 
 
@@ -36,15 +35,13 @@ class RecordingBM25Store(BM25IndexStore):
 
 
 @pytest.fixture
-def hybrid(tmp_path):
-    connection = create_connection(str(tmp_path / "hybrid.db"))
-    init_schema(connection)
+def hybrid(connection, tmp_path):
     repository = DocumentsRepository(connection)
     embeddings = RecordingEmbeddings(dimensions=8)
     bm25 = RecordingBM25Store(repository)
     service = DocumentService(
         repository,
-        VectorIndexStore(tmp_path / "faiss", dimensions=8),
+        PgVectorStore(connection, dimensions=8),
         embeddings,
         chunk_size=200,
         chunk_overlap=0,
@@ -57,10 +54,7 @@ def hybrid(tmp_path):
         rrf_k=60,
     )
 
-    try:
-        yield service, repository, embeddings, bm25, tmp_path
-    finally:
-        connection.close()
+    yield service, repository, embeddings, bm25, tmp_path
 
 
 def _ingest(service, root, name, text, namespace):
@@ -304,22 +298,16 @@ def test_search_bm25_never_calls_the_embedding_model(hybrid):
     assert embeddings.queries == []
 
 
-def test_invalid_search_mode_is_rejected(tmp_path):
-    connection = create_connection(str(tmp_path / "bad.db"))
-    init_schema(connection)
-
-    try:
-        with pytest.raises(ValueError, match="search_mode"):
-            DocumentService(
-                DocumentsRepository(connection),
-                VectorIndexStore(tmp_path / "faiss", dimensions=8),
-                FakeEmbeddings(),
-                chunk_size=100,
-                chunk_overlap=0,
-                search_mode="magic",
-            )
-    finally:
-        connection.close()
+def test_invalid_search_mode_is_rejected(connection):
+    with pytest.raises(ValueError, match="search_mode"):
+        DocumentService(
+            DocumentsRepository(connection),
+            PgVectorStore(connection, dimensions=8),
+            FakeEmbeddings(),
+            chunk_size=100,
+            chunk_overlap=0,
+            search_mode="magic",
+        )
 
 
 def test_ingestion_refreshes_bm25_results(hybrid):
@@ -360,13 +348,13 @@ def test_deletion_removes_hybrid_results(hybrid):
     assert service.search_bm25("alpha", "ns", k=4) == []
 
 
-def test_restart_rebuilds_bm25_from_sqlite(hybrid):
+def test_restart_rebuilds_bm25_from_the_database(hybrid):
     service, repository, embeddings, _, root = hybrid
     _ingest(service, root, "a.md", "onboarding starts on monday", "ns")
 
     restarted = DocumentService(
         repository,
-        VectorIndexStore(root / "faiss", dimensions=8),
+        PgVectorStore(repository._connection.raw, dimensions=8),
         embeddings,
         chunk_size=200,
         chunk_overlap=0,

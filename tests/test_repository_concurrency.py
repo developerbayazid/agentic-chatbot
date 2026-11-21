@@ -1,69 +1,39 @@
-"""Persistence: owner columns, migrations, and shared-connection locking."""
+"""Persistence: owner columns and shared-connection locking."""
 
-import sqlite3
 import threading
 
+import psycopg
 import pytest
 
 from agentic_chatbot.container import ChatbotContainer
-from agentic_chatbot.database import (
-    create_connection,
-    init_schema,
-    connection_lock,
-)
+from agentic_chatbot.models import Chunk
+from agentic_chatbot.postgres import connection_lock
 from agentic_chatbot.repository import (
     DocumentsRepository,
     NotesRepository,
     ThreadRepository,
 )
-from agentic_chatbot.models import Chunk
+from tests.pg import connect
 
 
-def _columns(connection, table):
-    return {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+def _columns(connection, schema, table):
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema = %s AND table_name = %s",
+            (schema, table),
+        )
+        return {row["column_name"] for row in cursor.fetchall()}
 
 
-def test_schema_has_owner_columns(container):
-    assert "owner_id" in _columns(container.connection, "threads")
-    assert "owner_id" in _columns(container.connection, "documents")
+def test_schema_has_owner_columns(container, schema):
+    assert "owner_id" in _columns(container.connection, schema, "threads")
+    assert "owner_id" in _columns(container.connection, schema, "documents")
 
 
-def test_migration_adds_owner_columns_to_a_legacy_database(tmp_path):
-    path = str(tmp_path / "legacy.db")
-    connection = create_connection(path)
-
-    connection.execute(
-        "CREATE TABLE threads (thread_id TEXT PRIMARY KEY, title TEXT NOT NULL, "
-        "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
-        "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
-    )
-    connection.execute(
-        "CREATE TABLE documents (doc_id TEXT PRIMARY KEY, namespace TEXT NOT NULL, "
-        "source TEXT NOT NULL, title TEXT NOT NULL, content_hash TEXT NOT NULL, "
-        "size_bytes INTEGER NOT NULL DEFAULT 0)"
-    )
-    connection.execute(
-        "INSERT INTO threads (thread_id, title) VALUES ('legacy', 'Old chat')"
-    )
-    connection.commit()
-
-    init_schema(connection)
-
-    assert "owner_id" in _columns(connection, "threads")
-    assert "owner_id" in _columns(connection, "documents")
-    row = connection.execute(
-        "SELECT title, owner_id FROM threads WHERE thread_id = 'legacy'"
-    ).fetchone()
-    assert row["title"] == "Old chat"
-    assert row["owner_id"] is None
-
-    init_schema(connection)
-    connection.close()
-
-
-def test_connection_lock_is_shared_per_connection():
-    first = create_connection(":memory:")
-    second = create_connection(":memory:")
+def test_connection_lock_is_shared_per_connection(schema):
+    first = connect(schema)
+    second = connect(schema)
 
     try:
         assert connection_lock(first) is connection_lock(first)
@@ -102,78 +72,68 @@ def test_unowned_threads_stay_visible_to_the_cli(container):
     assert len(container.thread_service.list_threads(owner_id="alice")) == 1
 
 
-def test_documents_are_owner_scoped(tmp_path):
-    connection = create_connection(str(tmp_path / "documents.db"))
-    init_schema(connection)
+def test_documents_are_owner_scoped(connection):
     repository = DocumentsRepository(connection)
 
-    try:
-        alice, _ = repository.replace_document(
-            "u_alice",
-            "a.md",
-            "Alice",
-            "hash-a",
-            10,
-            [Chunk(content="alpha only")],
-            owner_id="alice",
-        )
-        bob, _ = repository.replace_document(
-            "u_bob",
-            "b.md",
-            "Bob",
-            "hash-b",
-            10,
-            [Chunk(content="beta only")],
-            owner_id="bob",
-        )
+    alice, _ = repository.replace_document(
+        "u_alice",
+        "a.md",
+        "Alice",
+        "hash-a",
+        10,
+        [Chunk(content="alpha only")],
+        owner_id="alice",
+    )
+    bob, _ = repository.replace_document(
+        "u_bob",
+        "b.md",
+        "Bob",
+        "hash-b",
+        10,
+        [Chunk(content="beta only")],
+        owner_id="bob",
+    )
 
-        assert [d.doc_id for d in repository.list_documents(owner_id="alice")] == [
-            alice.doc_id
-        ]
-        assert [d.doc_id for d in repository.list_documents(owner_id="bob")] == [
-            bob.doc_id
-        ]
-        assert len(repository.list_documents()) == 2
-        assert repository.list_namespaces(owner_id="alice") == ["u_alice"]
-        assert "u_bob" not in repository.list_namespaces(owner_id="alice")
-    finally:
-        connection.close()
+    assert [d.doc_id for d in repository.list_documents(owner_id="alice")] == [
+        alice.doc_id
+    ]
+    assert [d.doc_id for d in repository.list_documents(owner_id="bob")] == [
+        bob.doc_id
+    ]
+    assert len(repository.list_documents()) == 2
+    assert repository.list_namespaces(owner_id="alice") == ["u_alice"]
+    assert "u_bob" not in repository.list_namespaces(owner_id="alice")
 
 
-def test_authorized_chunk_ids_are_owner_scoped(tmp_path):
-    connection = create_connection(str(tmp_path / "chunks.db"))
-    init_schema(connection)
+def test_authorized_chunk_ids_are_owner_scoped(connection):
     repository = DocumentsRepository(connection)
 
-    try:
-        alice, alice_ids = repository.replace_document(
-            "shared",
-            "a.md",
-            "Alice",
-            "hash-a",
-            10,
-            [Chunk(content="alpha"), Chunk(content="alpha two")],
-            owner_id="alice",
-        )
-        bob, bob_ids = repository.replace_document(
-            "shared",
-            "b.md",
-            "Bob",
-            "hash-b",
-            10,
-            [Chunk(content="beta")],
-            owner_id="bob",
-        )
+    alice, alice_ids = repository.replace_document(
+        "shared",
+        "a.md",
+        "Alice",
+        "hash-a",
+        10,
+        [Chunk(content="alpha"), Chunk(content="alpha two")],
+        owner_id="alice",
+    )
+    bob, bob_ids = repository.replace_document(
+        "shared",
+        "b.md",
+        "Bob",
+        "hash-b",
+        10,
+        [Chunk(content="beta")],
+        owner_id="bob",
+    )
 
-        authorized = repository.authorized_chunk_ids("alice", ["shared"])
+    authorized = repository.authorized_chunk_ids("alice", ["shared"])
 
-        assert authorized == set(alice_ids)
-        assert authorized.isdisjoint(bob_ids)
-        assert repository.authorized_chunk_ids("alice", []) == set()
-        assert repository.authorized_chunk_ids("nobody", ["shared"]) == set()
-        assert repository.authorized_chunk_ids("alice", ["missing"]) == set()
-    finally:
-        connection.close()
+    assert authorized == set(alice_ids)
+    assert authorized.isdisjoint(bob_ids)
+    assert repository.authorized_chunk_ids("alice", []) == set()
+    assert repository.authorized_chunk_ids("nobody", ["shared"]) == set()
+    assert repository.authorized_chunk_ids("alice", ["missing"]) == set()
 
 
 def test_concurrent_writes_on_one_connection_are_serialized(container):
@@ -241,5 +201,5 @@ def test_closed_connection_reports_error(settings):
     instance = ChatbotContainer(settings)
     instance.close()
 
-    with pytest.raises(sqlite3.ProgrammingError):
+    with pytest.raises(psycopg.OperationalError):
         instance.connection.execute("SELECT 1")

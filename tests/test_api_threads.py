@@ -2,13 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
-from agentic_chatbot.database import create_connection
-from agentic_chatbot.graph.workflow import build_chatbot
-from agentic_chatbot.models import Thread
-from agentic_chatbot.services.thread_service import ThreadService
-
 
 def _create(client, headers, title="New chat"):
     return client.post(

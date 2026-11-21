@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Callable, Sequence
 
 from rich.console import Console
 
@@ -19,7 +19,7 @@ def _unavailable_ask(prompt: str, completions: Sequence[Completion] = ()) -> str
     raise RuntimeError("interactive prompt is not available in this context")
 
 
-def _fallback_pick(session: "ChatSession", threads: Sequence[Thread]) -> Thread | None:
+def _fallback_pick(session: ChatSession, threads: Sequence[Thread]) -> Thread | None:
     """Non-interactive default: render the static list and make no selection."""
     from agentic_chatbot.cli import console as ui
 

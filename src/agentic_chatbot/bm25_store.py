@@ -91,7 +91,7 @@ class BM25IndexStore:
 
                 scores = cached.index.get_scores(tokens)
 
-                for row_id, score in zip(cached.row_ids, scores):
+                for row_id, score in zip(cached.row_ids, scores, strict=False):
                     value = float(score)
 
                     if value > 0:

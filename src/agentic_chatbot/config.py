@@ -2,6 +2,7 @@
 
 import os
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -14,17 +15,15 @@ class Settings(BaseSettings):
     )
 
     openai_api_key: str | None = None
-    database_path: str = "chatbot_memory.db"
 
-    # Storage backend. PostgreSQL is the default; SQLite remains available for
-    # offline use and as the migration source.
-    database_backend: Literal["sqlite", "postgres"] = "postgres"
-
-    # Required when `database_backend="postgres"`, supplied through the
-    # environment or `.env`. It is deliberately empty by default: a connection
-    # string embeds credentials, and a credential committed to source is a
-    # credential leaked to everyone who can read the repository. `build_container`
-    # refuses to start rather than guessing a localhost default.
+    # PostgreSQL is the only storage backend: it holds relational rows,
+    # embeddings (pgvector), and LangGraph checkpoints on one connection.
+    #
+    # Supplied through the environment or `.env`. It is deliberately empty by
+    # default: a connection string embeds credentials, and a credential
+    # committed to source is a credential leaked to everyone who can read the
+    # repository. `build_container` refuses to start rather than guessing a
+    # localhost default.
     postgres_dsn: str = ""
     llm_model: str = "gpt-4o-mini"
     llm_temperature: float = 0.0
@@ -42,7 +41,6 @@ class Settings(BaseSettings):
     rag_bm25_candidates: int = 10
     rag_rrf_k: int = 60
     docs_path: str = "docs"
-    rag_index_path: str = "data/faiss"
 
     # Inventory demo dataset (JSON persistence, no ORM)
     inventory_data_path: str = "inventory-data/inventory/inventory_data.json"
@@ -87,6 +85,24 @@ def export_langsmith_env(settings: Settings) -> None:
         os.environ.setdefault("LANGSMITH_PROJECT", settings.langsmith_project)
     if settings.langsmith_endpoint:
         os.environ.setdefault("LANGSMITH_ENDPOINT", settings.langsmith_endpoint)
+
+
+def redacted_dsn_label(dsn: str) -> str:
+    """Return a display-safe label for a DSN: host, port and database only.
+
+    The connection string embeds the password, and the CLI `/status` line is
+    rendered to a terminal that may be shared or recorded. Only the parts that
+    identify *which* database is in use are kept.
+    """
+    if not dsn:
+        return "not configured"
+
+    parts = urlsplit(dsn)
+    host = parts.hostname or "unknown-host"
+    port = f":{parts.port}" if parts.port else ""
+    database = parts.path.lstrip("/") or "unknown-db"
+
+    return f"postgresql://{host}{port}/{database}"
 
 
 def parse_api_keys(raw: str) -> dict[str, str]:

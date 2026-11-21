@@ -175,7 +175,10 @@ def _event_stream(
         return
 
     try:
-        for opening in start_frames(thread_id):
+        # Deliberately a loop rather than `yield from`: this generator converts
+        # destructive GeneratorExit into a clean close (below), and `yield from`
+        # would let the sub-generator own that protocol instead of this frame.
+        for opening in start_frames(thread_id):  # noqa: UP028
             yield opening
 
         for event in chat_service.stream_turn(thread_id, message, owner_id=subject):
